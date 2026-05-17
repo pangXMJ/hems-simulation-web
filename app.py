@@ -39,7 +39,7 @@ APPLIANCES = {
     'boosterPump': {'name': '加壓馬達', 'color': '#f59e0b'},
 }
 
-DATA_PATH = "HEMS_load_data.csv"
+DATA_PATH = "daily_appliance_data_1min.csv"
 
 # ============================================================
 # 2. 資料讀取與快取處理
@@ -120,32 +120,23 @@ if df_base is not None:
 
 
     # ============================================================
-    # 5. 銜接 PSO 演算法與資料預處理
+    # 5. 銜接 PSO 演算法與資料預處理 (修改後)
     # ============================================================
     st.markdown("---")
     st.subheader("🤖 步驟二：PSO 儲能排程最佳化")
 
-    # 【資料轉換橋樑】：將 1 分鐘的總負載 (W)，轉換為 24 小時的 (kWh) 陣列，供演算法使用
-    # 假設 df_plot['Total_W'] 長度為 1440
-    # 我們將每 60 筆 (1小時) 取平均，再除以 1000 轉成 kW(h)
     try:
+        # 將 1 分鐘的總負載轉為 24 小時陣列
         hourly_load = df_plot['Total_W'].values.reshape(-1, 60).mean(axis=1) / 1000.0
     except:
-        # 如果資料不是 1440 筆，做個簡單的 fallback
         st.warning("資料格式非標準 1440 筆，使用簡化重取樣。")
-        hourly_load = df_plot['Total_W'].values[:24] / 1000.0 # 僅為範例
+        hourly_load = df_plot['Total_W'].values[:24] / 1000.0 
 
-    # 將轉換好的陣列暫存成 CSV，讓核心演算法去讀取
-    # (這是一個小技巧，因為您的演算法包設計是讀取檔案路徑)
-    temp_data_path = "temp_hourly_load.csv"
-    pd.DataFrame({"FixedLoad_kW": hourly_load}).to_csv(temp_data_path, index=False)
-
-    # 執行運算
     status_placeholder.info("🔄 偵測到負載變更，PSO 重新計算中...")
     with st.spinner("PSO 演算法運算中..."):
-        # 呼叫您的核心演算法！
-        # 注意：請確保您的 hems_pso_core 裡面的 load_fixed_load_data 可以處理這個單欄位的 CSV
-        data_package = hems_pso_core.run_optimization_pipeline(temp_data_path)
+        # 直接將 hourly_load 陣列傳入核心演算法，不需經過 CSV
+        data_package = hems_pso_core.run_optimization_pipeline(hourly_load)
+    
     status_placeholder.success("✅ 計算完成！")
 
 
