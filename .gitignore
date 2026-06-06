@@ -15,3 +15,18 @@ venv/
 # Windows
 Thumbs.db
 Desktop.ini
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Test / temporary files
+test_files/
+
+# Large model files
+*.h5
+*.pt
+*.pth
+*.pkl

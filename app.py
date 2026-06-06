@@ -9,7 +9,7 @@ from matplotlib import font_manager
 
 # 匯入 PSO 核心演算法檔案。
 # 你的資料夾裡面需要有 hems_pso_core.py，否則這行會出錯。
-import hems_pso_core
+from pso import hems_pso_core
 
 # ============================================================
 # 0. 設定 Matplotlib 支援中文
@@ -93,7 +93,7 @@ APPLIANCES = {
 BASE_DIR = Path(__file__).resolve().parent
 
 # CSV 檔案路徑。
-DATA_PATH = BASE_DIR / "daily_appliance_data_1min.csv"
+DATA_PATH = BASE_DIR / "data" / "raw" / "daily_appliance_data_1min.csv"
 
 
 # ============================================================
