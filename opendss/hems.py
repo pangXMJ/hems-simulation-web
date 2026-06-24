@@ -18,7 +18,7 @@ def build_circuit():
 
     dss.Basic.ClearAll()
     # 1. 讀取 CSV
-    df_loads = pd.read_csv(r"C:\projects\hems-simulation-web\data\sample\LoadShapes_All_Nodes_15min.csv")
+    df_loads = pd.read_csv(r"C:\projects\hems-simulation-web\data\sample\LoadShapes_All_Nodes_1min.csv")
     #csv檔案的路徑
     df_pv = pd.read_csv(r"C:\projects\hems-simulation-web\data\sample\pv_curve.csv")
 
@@ -418,7 +418,7 @@ def build_circuit():
 
         "Set Voltagebases=[11.4, 6.6, 0.22, 0.11]",
         "CalcVoltageBases",
-        "Set mode=Daily stepsize=15m number=1",
+        "Set mode=Daily stepsize=1m number=1",
 
         #"Solve",將solve刪除進入迴圈控制
     ])
