@@ -18,9 +18,9 @@ def build_circuit():
 
     dss.Basic.ClearAll()
     # 1. 讀取 CSV
-    df_loads = pd.read_csv(r'C:\Users\User\Desktop\project\dssdata\LoadShapes_All_Nodes_15min.csv')
+    df_loads = pd.read_csv(r"C:\projects\hems-simulation-web\data\sample\LoadShapes_All_Nodes_15min.csv")
     #csv檔案的路徑
-    df_pv = pd.read_csv(r'C:\Users\User\Desktop\project\dssdata\pv_curve.csv')
+    df_pv = pd.read_csv(r"C:\projects\hems-simulation-web\data\sample\pv_curve.csv")
 
     # 轉成 OpenDSS 要求的清單格式串列
     # 假設 CSV 裡的數值是瓦特 (W)，我們除以 1000 轉成 kW
@@ -33,7 +33,7 @@ def build_circuit():
     loadshape_commands = []
     for col in df_loads.columns:
         # 排除時間欄位，只抓取設備名稱
-        if col not in ['Time', 'Hour', 'Minute']:
+        if col not in ['Time', 'Hour', 'Minute']: 
             mult_list = (df_loads[col] / 1000.0).tolist()
             mult_str = "[" + ",".join(map(str, mult_list)) + "]"
             # npts=96 (總共96筆), minterval=15 (間隔15分鐘)
@@ -528,8 +528,7 @@ if __name__ == "__main__":
     #show_results()
 
     # 【修改這裡】指定你要儲存的完整路徑
-    save_path = r"C:\Users\User\Desktop\project\dssdata\Panel_Common_Nodes_History.csv"
-
+    save_path = r"C:\projects\hems-simulation-web\data\sample\Panel_Common_Nodes_History.csv"
     # 存檔，並加入 encoding='utf-8-sig' 確保 Excel 開啟不亂碼
     df_history.to_csv(save_path, index=False, encoding='utf-8-sig')
 
