@@ -18,9 +18,9 @@ def build_circuit():
 
     dss.Basic.ClearAll()
     # 1. 讀取 CSV
-    df_loads = pd.read_csv(r"C:\projects\hems-simulation-web\data\sample\LoadShapes_All_Nodes_1min.csv")
+    df_loads = pd.read_csv(r"..\data\sample\LoadShapes_All_Nodes_1min.csv")
     #csv檔案的路徑
-    df_pv = pd.read_csv(r"C:\projects\hems-simulation-web\data\sample\pv_curve.csv")
+    df_pv = pd.read_csv(r"..\data\sample\pv_curve.csv")
 
     # 轉成 OpenDSS 要求的清單格式串列
     # 假設 CSV 裡的數值是瓦特 (W)，我們除以 1000 轉成 kW
@@ -36,8 +36,7 @@ def build_circuit():
         if col not in ['Time', 'Hour', 'Minute']: 
             mult_list = (df_loads[col] / 1000.0).tolist()
             mult_str = "[" + ",".join(map(str, mult_list)) + "]"
-            # npts=96 (總共96筆), minterval=15 (間隔15分鐘)
-            cmd = f"New LoadShape.Shape_{col} npts=96 minterval=15 mult={mult_str}"
+            cmd = f"New LoadShape.Shape_{col} npts=1440 minterval=1 mult={mult_str}"
             loadshape_commands.append(cmd)
 
     pv_mult_list = df_pv['pv_kw'].tolist()
@@ -45,6 +44,16 @@ def build_circuit():
     # 注意！這裡是 npts=24 (24筆) interval=1 (間隔1小時)
     pv_cmd = f"New LoadShape.PV_Shape npts=24 interval=1 mult={pv_mult_str}"
     loadshape_commands.append(pv_cmd)
+
+
+# ==========================================
+# ep盤設備共16個 每個假設以100W全天運轉 A電表理論值每小時1.6Kw
+# 但A電表需考慮到ep盤上面的儲能系統 A電表的紀錄值應該為 -(儲能系統放電量-ep盤負載消耗量)
+# L1盤設備共10個 每個假設以200W全天運轉 B電表理論值每小時2Kw
+# L2盤設備共14個 每個假設以300W全天運轉 C電表理論值每小時4.2Kw
+# L3盤設備共11個 每個假設以400W全天運轉 D電表理論值每小時4.4Kw
+# ==========================================
+
 
 
     commands=[
@@ -131,7 +140,7 @@ def build_circuit():
         # kWhrated 電池的總能量容量（電量），即 20 度電。pf=1.0:
         # 預設功因為 1.0。state=IDLING:
         # 初始狀態設定。IDLING: 待機中，既不充電也不放電。後續可透過指令改為 CHARGING（充電）或 DISCHARGING（放電）。
-        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=5.0 kWrated=5.0 kWhrated=20.0 pf=1.0 state=IDLING",
+        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=5.0 kWrated=5.0 kWhrated=20.0 pf=1.0 state=IDLING  %stored=50",
 
 # ==========================================
 # ATS 自動轉換開關與 EP 配電盤 (停電備援邏輯)
@@ -426,7 +435,7 @@ def build_circuit():
     return commands
 
 
-def run_simulation():
+def run_simulation(bess_schedule):
     """執行電路建構與步進求解，並以寬表格(Wide Format)整理所有狀態與電錶累積值。"""
     commands = build_circuit()
 
@@ -435,9 +444,9 @@ def run_simulation():
 
     print("✅ 電路建置完成！開始進行 24 小時步進模擬 (Step-by-Step Simulation)...\n")
 
-    dss.Text.Command("Set mode=Daily stepsize=15m number=1")
+    dss.Text.Command("Set mode=Daily stepsize=1m number=1")
 
-    total_steps = 96
+    total_steps = 1440
     history_data = []  # 準備收集寬表格資料的陣列
 
     # 配電盤定義
@@ -458,21 +467,37 @@ def run_simulation():
     }
 
     for step in range(total_steps):
+
+        hour=step//60
+        current_bess_kw=bess_schedule[hour]
+        if current_bess_kw>0:
+            dss.Text.Command(f"Edit Storage.Battery_Sys state=DISCHARGING kw={current_bess_kw}")
+        elif current_bess_kw < 0:
+            dss.Text.Command(f"Edit Storage.Battery_Sys state=CHARGING kW={abs(current_bess_kw)}")
+        else:
+            dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+
         dss.Text.Command("Solve")
 
         # 1. 處理時間字串 (將小數小時 0.25, 0.5 轉換為 0:15, 0:30 等格式)
-        current_hour = dss.Solution.DblHour()
-        h = int(current_hour)
-        m = int(round((current_hour - h) * 60))
-        if m == 60:
-            h += 1
-            m = 0
-        time_str = f"{h}:{m:02d}"
+        h = int(step//60)
+        m = int(step%60)
+        time_str = f"{h:02d}:{m:02d}"
 
         # 建立這一筆時間的資料字典 (這就是未來 CSV 的一列)
-        row_dict = {"時間": time_str}
 
-        # 2. 抓取各配電盤的電壓與電流
+        row_dict = {"time": time_str, "Hour": h, "Minute": m}
+
+
+        dss.Circuit.SetActiveElement("Storage.Battery_Sys")
+        soc_str = dss.Properties.Value("%stored")
+        if soc_str:
+            row_dict["電池_SOC(%)"] = round(float(soc_str), 2)
+        else:
+            row_dict["電池_SOC(%)"] = 0.0
+
+
+        # 抓取各配電盤的電壓與電流
         for p_name, config in panel_configs.items():
 
             # [電壓]
@@ -501,14 +526,14 @@ def run_simulation():
             row_dict[f"{p_name}_總電流_L1(A)"] = i1
             row_dict[f"{p_name}_總電流_L2(A)"] = i2
 
-        # 3. 抓取各電錶當前的累積用電量 (kWh)
+        # 抓取各電錶當前的累積用電量 (kWh)
         for ch_name, dss_name in meter_targets.items():
             dss.Meters.Name(dss_name)
             regs = dss.Meters.RegisterValues()
             names = dss.Meters.RegisterNames()
             reg_map = dict(zip(names, regs)) if regs else {}
             # 抓取 kWh，保留小數點後 2 位
-            kwh = round(reg_map.get('kWh', 0), 2)
+            kwh = round(reg_map.get('kWh', 0), 5)
             row_dict[f"{ch_name}_當前累積功率(kWh)"] = kwh
 
         # 將這一列整合完畢的資料放入總表中
@@ -524,13 +549,15 @@ def run_simulation():
 
 
 if __name__ == "__main__":
-    df_history = run_simulation()
+    fake_schedule = [0,0,0,0,0,0,0,0,0,0, -3,-3,-3,-3, 0,0,0,0, 3,3,3, 0,0,0]
+    df_history = run_simulation(fake_schedule)
     #show_results()
 
     # 【修改這裡】指定你要儲存的完整路徑
-    save_path = r"C:\projects\hems-simulation-web\data\sample\Panel_Common_Nodes_History.csv"
+    save_path = r"..\data\sample\Panel_Common_Nodes_History.csv"
     # 存檔，並加入 encoding='utf-8-sig' 確保 Excel 開啟不亂碼
     df_history.to_csv(save_path, index=False, encoding='utf-8-sig')
 
     # 印出提示訊息確認
     print(f"\n檔案已成功存檔至：{save_path}")
+        
