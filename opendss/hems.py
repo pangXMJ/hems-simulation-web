@@ -18,9 +18,9 @@ def build_circuit():
 
     dss.Basic.ClearAll()
     # 1. 讀取 CSV
-    df_loads = pd.read_csv(r"..\data\sample\LoadShapes_All_Nodes_1min.csv")
+    df_loads = pd.read_csv(r".\data\sample\LoadShapes_All_Nodes_1min.csv")
     #csv檔案的路徑
-    df_pv = pd.read_csv(r"..\data\sample\pv_curve.csv")
+    df_pv = pd.read_csv(r".\data\sample\pv_curve_1min.csv")
 
     # 轉成 OpenDSS 要求的清單格式串列
     # 假設 CSV 裡的數值是瓦特 (W)，我們除以 1000 轉成 kW
@@ -34,20 +34,20 @@ def build_circuit():
     for col in df_loads.columns:
         # 排除時間欄位，只抓取設備名稱
         if col not in ['Time', 'Hour', 'Minute']: 
-            mult_list = (df_loads[col] / 1000.0).tolist()
+            mult_list = (df_loads[col] / 1000.0).tolist()#1000在這裡
             mult_str = "[" + ",".join(map(str, mult_list)) + "]"
-            cmd = f"New LoadShape.Shape_{col} npts=1440 minterval=1 mult={mult_str}"
+            cmd = f"New LoadShape.Shape_{col} npts=1440 interval=1 mult={mult_str}"
             loadshape_commands.append(cmd)
 
-    pv_mult_list = df_pv['pv_kw'].tolist()
+    pv_mult_list = (df_pv['pv_kw'] / 1000.0).tolist()
     pv_mult_str = "[" + ",".join(map(str, pv_mult_list)) + "]"
-    # 注意！這裡是 npts=24 (24筆) interval=1 (間隔1小時)
-    pv_cmd = f"New LoadShape.PV_Shape npts=24 interval=1 mult={pv_mult_str}"
+    # 注意！這裡是 npts=1440 (1440筆) interval=1 (間隔1分鐘)
+    pv_cmd = f"New LoadShape.PV_Shape npts=1440 minterval=1 mult={pv_mult_str}"
     loadshape_commands.append(pv_cmd)
 
 
 # ==========================================
-# ep盤設備共16個 每個假設以100W全天運轉 A電表理論值每小時1.6Kw
+# ep盤設備共16個 每個假設以100W全天運轉 A電表理論值每小時1.6Kw 
 # 但A電表需考慮到ep盤上面的儲能系統 A電表的紀錄值應該為 -(儲能系統放電量-ep盤負載消耗量)
 # L1盤設備共10個 每個假設以200W全天運轉 B電表理論值每小時2Kw
 # L2盤設備共14個 每個假設以300W全天運轉 C電表理論值每小時4.2Kw
@@ -128,7 +128,7 @@ def build_circuit():
         "New EnergyMeter.MeterPV element=Line.ToMeterPV terminal=1",
 
         # 3. 修正 PVSystem 的連接點，將其接在新建的 PV_Node 上 (原本是直接接 Inv_AC)
-        "New PVSystem.PV_Array phases=1 bus1=PV_Node.1.2 kV=0.22 kVA=5.0 pmpp=4.8 pf=1.0 daily=PV_Shape",
+        "New PVSystem.PV_Array phases=1 bus1=PV_Node.1.2 kV=0.22 kVA=5.0 pmpp=1.0 pf=1.0 daily=PV_Shape %cutin=0.1 %cutout=0.1",  # 5kW 太陽能系統，功因為 1.0，日曲線使用 PV_Shape，%cutin=0.0 %cutout=0.0 表示不會因為電壓過低而停機
 
 
 
@@ -435,7 +435,7 @@ def build_circuit():
     return commands
 
 
-def run_simulation(bess_schedule):
+def run_simulation():
     """執行電路建構與步進求解，並以寬表格(Wide Format)整理所有狀態與電錶累積值。"""
     commands = build_circuit()
 
@@ -466,38 +466,87 @@ def run_simulation(bess_schedule):
         "D電錶": "KwhD"
     }
 
+    # ==========================================
+    # 🌟 將 PV 數據讀入 Python 大腦，供決策使用
+    # ==========================================
+    df_pv_brain = pd.read_csv(r".\data\sample\pv_curve_1min.csv")
+    # 將欄位轉成 List 陣列 (注意：這裡面的數字都是 W 瓦特)
+    pv_w_list = df_pv_brain['pv_kw'].tolist() 
+
+    is_island_mode = False  # 預設為 False：代表市電供電模式
+
+
+
     for step in range(total_steps):
-
-        hour=step//60
-        current_bess_kw=bess_schedule[hour]
-        if current_bess_kw>0:
-            dss.Text.Command(f"Edit Storage.Battery_Sys state=DISCHARGING kw={current_bess_kw}")
-        elif current_bess_kw < 0:
-            dss.Text.Command(f"Edit Storage.Battery_Sys state=CHARGING kW={abs(current_bess_kw)}")
-        else:
-            dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
-
-        dss.Text.Command("Solve")
+    
 
         # 1. 處理時間字串 (將小數小時 0.25, 0.5 轉換為 0:15, 0:30 等格式)
         h = int(step//60)
         m = int(step%60)
         time_str = f"{h:02d}:{m:02d}"
 
-        # 建立這一筆時間的資料字典 (這就是未來 CSV 的一列)
-
-        row_dict = {"time": time_str, "Hour": h, "Minute": m}
 
 
         dss.Circuit.SetActiveElement("Storage.Battery_Sys")
         soc_str = dss.Properties.Value("%stored")
-        if soc_str:
-            row_dict["電池_SOC(%)"] = round(float(soc_str), 2)
+        soc = float(soc_str) if soc_str else 0.0
+        
+        current_pv_w = pv_w_list[step]  # 抓出第 step 分鐘的瓦數 (W)
+        pv_kw = current_pv_w / 1000.0   # 轉換為千瓦 (kW)，餵給下面的判斷式
+
+        # ==========================================
+        # 🔄 3. ATS 切換邏輯 (狀態機)
+        # ==========================================
+        if soc >= 99.9 and not is_island_mode:
+            # 觸發條件：充飽 100%，且原本還在市電模式
+            is_island_mode = True
+            # [切換 ATS]：關閉市電進線，開啟逆變器進線
+            dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
+            dss.Text.Command("Edit Line.Inv_to_EP enabled=yes")
+            print(f"[{time_str}] 🔋電池滿電！ATS切斷市電，EP盤改由「電池供電」。")
+
+        elif soc <= 20.0 and is_island_mode:
+            # 觸發條件：掉到 20%，且原本在電池模式
+            is_island_mode = False
+            # [切換 ATS]：恢復市電進線，關閉逆變器進線
+            dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
+            dss.Text.Command("Edit Line.Inv_to_EP enabled=no")
+            print(f"[{time_str}] ⚠️電池低電量！ATS接回市電，開始充電。")  
+
+
+        # ==========================================
+        # ⚡ 4. 電池充放電行為控制
+        # ==========================================
+        if is_island_mode:
+            # 【模式 A：電池供電】
+            # 強制放電供應家裡，設定放電 3kW
+            dss.Text.Command("Edit Storage.Battery_Sys state=DISCHARGING kW=3.0")
         else:
-            row_dict["電池_SOC(%)"] = 0.0
+            # 【模式 B：市電供電 (太陽能優先充電池)】
+            if pv_kw > 0.05: # 如果太陽能有發電 (大於 50W 才充)
+                # 將「充電功率」精準設定為「太陽能發電量」 (不超過 5kW 上限)
+                charge_pct = round((min(pv_kw, 5.0) / 5.0) * 100, 2)
+                dss.Text.Command(f"Edit Storage.Battery_Sys state=CHARGING %Charge={charge_pct}")
+            else:
+                # 沒太陽的時候就休息
+                dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
 
 
+
+        # ==# ==========================================
+        # 5. 執行這 1 分鐘的物理計算 (Solve)
+        # ==========================================
+        dss.Text.Command("Solve")
+        
+        # 建立這一步的數據字典
+        row_dict = {"Time": time_str, "Hour": h, "Minute": m}
+        row_dict["電池_SOC(%)"] = round(soc, 2)
+        row_dict["供電模式"] = "電池供電" if is_island_mode else "市電供電"
+
+        # ==========================================
         # 抓取各配電盤的電壓與電流
+        # ==========================================
+
         for p_name, config in panel_configs.items():
 
             # [電壓]
@@ -549,15 +598,16 @@ def run_simulation(bess_schedule):
 
 
 if __name__ == "__main__":
-    fake_schedule = [0,0,0,0,0,0,0,0,0,0, -3,-3,-3,-3, 0,0,0,0, 3,3,3, 0,0,0]
-    df_history = run_simulation(fake_schedule)
+    df_history = run_simulation()
     #show_results()
 
     # 【修改這裡】指定你要儲存的完整路徑
-    save_path = r"..\data\sample\Panel_Common_Nodes_History.csv"
-    # 存檔，並加入 encoding='utf-8-sig' 確保 Excel 開啟不亂碼
-    df_history.to_csv(save_path, index=False, encoding='utf-8-sig')
-
-    # 印出提示訊息確認
-    print(f"\n檔案已成功存檔至：{save_path}")
+    save_path = r".\data\sample\Panel_Common_Nodes_History.csv"
+    try:
+        # 存檔，並加入 encoding='utf-8-sig' 確保 Excel 開啟不亂碼
+        df_history.to_csv(save_path, index=False, encoding='utf-8-sig')
+        # 印出提示訊息確認
+        print(f"\n✅ 檔案已成功存檔至：{save_path}")
+    except PermissionError:
+        print(f"\n❌ 存檔失敗！請檢查是否正在使用 Excel 開啟該 CSV 檔案，請關閉後再執行一次！")
         
