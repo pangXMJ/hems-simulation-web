@@ -9,7 +9,7 @@ from matplotlib import font_manager
 
 # 匯入 PSO 核心演算法檔案。
 # 你的資料夾裡面需要有 hems_pso_core.py，否則這行會出錯。
-from pso import hems_pso_core
+from pso.pipeline import run_optimization_pipeline
 
 # ============================================================
 # 0. 設定 Matplotlib 支援中文
@@ -441,7 +441,7 @@ if df_base is not None:
 
     with st.spinner("PSO 演算法運算中..."):
         # 將 24 小時負載送進 PSO 核心演算法。
-        data_package = hems_pso_core.run_optimization_pipeline(hourly_load)
+        data_package = run_optimization_pipeline(hourly_load)
 
     status_placeholder.success("✅ 計算完成！")
 
