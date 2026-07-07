@@ -1,0 +1,4 @@
+﻿plan_code,plan_name_zh,plan_name_en,pricing_type,basic_fee_ntd_per_month,over_2000_threshold_kwh,over_2000_extra_ntd_per_kwh,source_image_note,note_zh,note_en
+non_tou_residential,非時間電價-住宅用,Non-Time-of-Use Residential,tiered_non_time_of_use,,,,依使用者提供之「非時間電價」圖片整理,住宅用非時間電價，夏月為6月1日至9月30日，非夏月為夏月以外時間。,Residential non-TOU tariff. Summer is June 1 to September 30; non-summer is the remaining period.
+tou_2stage_residential,簡易型時間電價-二段式,Simple Time-of-Use Two-Period Residential,simple_time_of_use_2_stage,75.0,2000,1.04,依使用者提供之「簡易型時間電價 二段式」圖片整理,簡易型時間電價二段式，含基本電費與超過2000度加價。,Simple TOU two-period tariff with monthly basic charge and surcharge above 2000 kWh.
+tou_3stage_residential,簡易型時間電價-三段式,Simple Time-of-Use Three-Period Residential,simple_time_of_use_3_stage,75.0,2000,1.04,依使用者提供之「簡易型時間電價 三段式」圖片整理,簡易型時間電價三段式，含基本電費與超過2000度加價。,Simple TOU three-period tariff with monthly basic charge and surcharge above 2000 kWh.
