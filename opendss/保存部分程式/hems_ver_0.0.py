@@ -18,9 +18,9 @@ def build_circuit():
 
     dss.Basic.ClearAll()
     # 1. 讀取 CSV
-    df_loads = pd.read_csv(r".\data\sample\LoadShapes_All_Nodes_15min.csv")
+    df_loads = pd.read_csv(r".\data\sample\LoadShapes_All_Nodes_1min.csv")
     #csv檔案的路徑
-    df_pv = pd.read_csv(r".\data\sample\pv_curve_15min.csv")
+    df_pv = pd.read_csv(r".\data\sample\pv_curve_1min.csv")
 
     # 轉成 OpenDSS 要求的清單格式串列
     # 假設 CSV 裡的數值是瓦特 (W)，我們除以 1000 轉成 kW
@@ -36,14 +36,13 @@ def build_circuit():
         if col not in ['Time', 'Hour', 'Minute']: 
             mult_list = (df_loads[col] / 1000.0).tolist()#1000在這裡
             mult_str = "[" + ",".join(map(str, mult_list)) + "]"
-            cmd = f"New LoadShape.Shape_{col} npts=96 minterval=15 mult={mult_str}"#如果要改變時間解析度要調整這裡的npts,跟minterval
+            cmd = f"New LoadShape.Shape_{col} npts=1440 interval=1 mult={mult_str}"
             loadshape_commands.append(cmd)
 
     pv_mult_list = (df_pv['pv_kw'] / 1000.0).tolist()
     pv_mult_str = "[" + ",".join(map(str, pv_mult_list)) + "]"
     # 注意！這裡是 npts=1440 (1440筆) interval=1 (間隔1分鐘)
-    ##如果要改變時間解析度要調整這裡的npts,跟minterval
-    pv_cmd = f"New LoadShape.PV_Shape npts=96 minterval=15 mult={pv_mult_str}"
+    pv_cmd = f"New LoadShape.PV_Shape npts=1440 minterval=1 mult={pv_mult_str}"
     loadshape_commands.append(pv_cmd)
 
 
@@ -428,7 +427,7 @@ def build_circuit():
 
         "Set Voltagebases=[11.4, 6.6, 0.22, 0.11]",
         "CalcVoltageBases",
-        "Set mode=Daily stepsize=15m number=1",
+        "Set mode=Daily stepsize=1m number=1",
 
         #"Solve",將solve刪除進入迴圈控制
     ])
@@ -445,9 +444,9 @@ def run_simulation():
 
     print("✅ 電路建置完成！開始進行 24 小時步進模擬 (Step-by-Step Simulation)...\n")
 
-    dss.Text.Command("Set mode=Daily stepsize=15m number=1")#有改時間解析度這裡也要記得改
+    dss.Text.Command("Set mode=Daily stepsize=1m number=1")
 
-    total_steps = 96 #如果要改變時間解析度要調整這裡的totel_step指執行模擬的次數，1分鐘=1440次，5分鐘=288次，10分鐘=144次，15分鐘=96次，30分鐘=48次，60分鐘=24次
+    total_steps = 1440
     history_data = []  # 準備收集寬表格資料的陣列
 
     # 配電盤定義
@@ -470,7 +469,7 @@ def run_simulation():
     # ==========================================
     # 🌟 將 PV 數據讀入 Python 大腦，供決策使用
     # ==========================================
-    df_pv_brain = pd.read_csv(r".\data\sample\pv_curve_15min.csv")#要抓15分鐘1筆的太陽能發電量
+    df_pv_brain = pd.read_csv(r".\data\sample\pv_curve_1min.csv")
     # 將欄位轉成 List 陣列 (注意：這裡面的數字都是 W 瓦特)
     pv_w_list = df_pv_brain['pv_kw'].tolist() 
 
@@ -482,11 +481,10 @@ def run_simulation():
     
 
         # 1. 處理時間字串 (將小數小時 0.25, 0.5 轉換為 0:15, 0:30 等格式)
-        minute=step * 15
-        h = int(minute//60)
-        m = int(minute%60)
+        h = int(step//60)
+        m = int(step%60)
         time_str = f"{h:02d}:{m:02d}"
-    
+
 
 
         dss.Circuit.SetActiveElement("Storage.Battery_Sys")
@@ -604,7 +602,7 @@ if __name__ == "__main__":
     #show_results()
 
     # 【修改這裡】指定你要儲存的完整路徑
-    save_path = r".\data\sample\Panel_Common_Nodes_15m_History.csv"#儲存的檔名
+    save_path = r".\data\sample\Panel_Common_Nodes_History.csv"
     try:
         # 存檔，並加入 encoding='utf-8-sig' 確保 Excel 開啟不亂碼
         df_history.to_csv(save_path, index=False, encoding='utf-8-sig')
