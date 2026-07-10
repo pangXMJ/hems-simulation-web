@@ -1,20 +1,20 @@
 import opendssdirect as dss
 import pandas as pd
-from hems_circuit import build_circuit  # 🌟 匯入硬體電路
+from hems_circuit import build_circuit  #呼叫opendss電路
 
 def run_basecontrol_simulation():
     """執行未經最佳化的基準測試 (太陽能優先自用 / 淨功率邏輯)"""
     
-    # 1. 向硬體工程師取得並建立電路
-    commands = build_circuit()
-    for cmd in commands:
-        dss.Text.Command(cmd)
+    # 取得並建立電路
+    commands = build_circuit()#呼叫build_circuit()的程式。
+    for cmd in commands:#讓cmd去儲存build_circult中每一行的opendss指令
+        dss.Text.Command(cmd)#將cmd中的指令傳給opendss去執行
 
     print("✅ 基準電路建置完成！開始進行 15 分鐘步進模擬 (basecontrol)...\n")
     dss.Text.Command("Set mode=Daily stepsize=15m number=1")
 
     total_steps = 96
-    history_data = []
+    history_data = []#等等儲存結果的陣列
 
     # 配電盤定義
     panel_configs = {
