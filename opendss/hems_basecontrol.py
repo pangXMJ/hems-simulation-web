@@ -15,6 +15,8 @@ def run_basecontrol_simulation():
 
     total_steps = 96
     history_data = []#等等儲存結果的陣列
+    all_violation=[]#儲存電路異常的數值
+
 
     # 配電盤定義
     panel_configs = {
@@ -104,6 +106,12 @@ def run_basecontrol_simulation():
 
         # 5. 執行這 15 分鐘的物理計算 (Solve)
         dss.Text.Command("Solve")
+
+
+        #執行異常檢測
+        current_violations = check_system_violations(time_str)
+        if current_violations:
+            all_violation.extend(current_violations)
         
         # 6. 整理數據字典
         row_dict = {"Time": time_str, "Hour": h, "Minute": m}
@@ -158,8 +166,69 @@ def run_basecontrol_simulation():
 
     # 迴圈結束，轉換為 DataFrame
     df_history = pd.DataFrame(history_data)
+    df_warning=pd.DataFrame(all_violation)
 
     print("=== 模擬完成！匯出寬表格摘要 (前 5 筆) ===")
     print(df_history.head(5).to_string(index=False))
 
-    return df_history
+    return df_history,df_warning
+
+
+
+def check_system_violations(time_str):
+    print("檢查線路負載情形")
+    violations=[]
+    idx = dss.PDElements.First()
+
+# ==========================================
+# 檢查線路與變壓器是否過載 (Thermal Overload Check)
+# ==========================================
+# First() 會將第一個 PD (Power Delivery) 元件設為 Active    
+#OpenDSS 的核心是用 Delphi 語言撰寫的，為了讓 MATLAB、Python、C# 等各種語言都能順利呼叫它，它採用了一種叫做狀態機（State Machine）的設計。
+#當呼叫 dss.PDElements.First() 時，OpenDSS 在底層會做兩件事：
+#把系統指標指向第一個 PDEntity（例如 Line、Transformer），讓它成為「Active（當前啟動）」的元件。
+#回傳一個整數（通常是 1）。如果系統裡完全沒有元件，它會回傳 0。
+#讀取名稱是用 dss.CktElement.Name()，裡面完全不需要帶入 idx。因為 OpenDSS 已經知道「現在 Active 的是誰」，它會直接把當前元件的資料吐給你。
+
+    while idx>0:
+        elem_name=dss.CktElement.Name()#取得元件名稱
+        norm_amps=dss.CktElement.NormalAmps()
+        if norm_amps>0:
+            currents_date=dss.CktElement.CurrentsMagAng()
+            currents_mags=currents_date[0::2] if currents_date else [0]
+
+            max_currents=max(currents_mags)
+            loading_pct=(max_currents/norm_amps)*100
+
+
+            if loading_pct>100:
+                violations.append({
+                    "time":time_str,
+                    "violation_Type":"over load",
+                    "Element":elem_name,
+                    "value":round(max_currents,2),
+                    "Limit":norm_amps,
+                    "Message":f"過載!負載率為{round(loading_pct,1)}%"
+                })
+        idx=dss.PDElements.Next()
+    node_names = dss.Circuit.AllNodeNames() 
+    # 取得所有節點的標么電壓 (pu) 大小
+    pu_voltages = dss.Circuit.AllBusMagPu() 
+        
+    for node, pu_v in zip(node_names, pu_voltages):
+        if pu_v > 0.1:  # 忽略沒接電的空節點 (電壓接近0)
+            if pu_v < 0.95 or pu_v > 1.05:
+                violations.append({
+                    "Time": time_str,
+                    "Violation_Type": "Voltage_Limit",
+                    "Element": f"Node_{node}",
+                    "Value": round(pu_v, 4),
+                    "Limit": "0.95 ~ 1.05 pu",
+                    "Message": "電壓越限！(過低或過壓)"
+                })
+                    
+    return violations
+
+
+
+    

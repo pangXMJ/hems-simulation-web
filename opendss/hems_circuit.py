@@ -74,14 +74,16 @@ def build_circuit():
         "r1=0.1 x1=0.1 length=0.01 units=km",#約10公尺
 
 # ==================== 建立線徑規格 (LineCode)  ====================
+# 總進屋線的線徑規格 線徑平方的正序的電阻,電抗,
 
-        "New LineCode.wire_100mm2    nphases=2 r1=0.18  x1=0.07 r0=0.18  x0=0.07 units=km",
-        # 總進屋線的線徑規格 100mm平方的正序的電阻,電抗,
-        "New LineCode.wire_30mm2     nphases=2 r1=0.60  x1=0.08 r0=0.60  x0=0.08 units=km",  # 電錶到各盤的線徑規格
-        "New LineCode.wire_8mm2_2p   nphases=2 r1=2.30  x1=0.08 r0=2.30  x0=0.08 units=km",  # EP→LW 幹線
-        "New LineCode.wire_2mm2_1p   nphases=1 r1=9.18  x1=0.09 r0=9.18  x0=0.09 units=km",  # 110V 照明
-        "New LineCode.wire_5p5mm2_1p nphases=1 r1=3.30  x1=0.08 r0=3.30  x0=0.08 units=km",  # 110V
-        "New LineCode.wire_5p5mm2_2p nphases=2 r1=3.30  x1=0.08 r0=3.30  x0=0.08 units=km",  # 220V
+        "New LineCode.wire_100mm2    nphases=2 r1=0.18  x1=0.07 r0=0.18  x0=0.07 normamps=250 units=km",
+        "New LineCode.wire_30mm2     nphases=2 r1=0.60  x1=0.08 r0=0.60  x0=0.08 normamps=100 units=km",  # 電錶到各盤的線徑規格
+        "New LineCode.wire_8mm2_2p   nphases=2 r1=2.30  x1=0.08 r0=2.30  x0=0.08 normamps=50 units=km",  # EP→LW 幹線
+        "New LineCode.wire_5p5mm2_1p nphases=1 r1=3.30  x1=0.08 r0=3.30  x0=0.08 normamps=30 units=km",  # 110V
+        "New LineCode.wire_5p5mm2_2p nphases=2 r1=3.30  x1=0.08 r0=3.30  x0=0.08 normamps=30 units=km",  # 220V
+        "New LineCode.wire_2mm2_1p   nphases=1 r1=9.18  x1=0.09 r0=9.18  x0=0.09 normamps=20 units=km",  # 110V 照明用線
+
+     
 
 
 
