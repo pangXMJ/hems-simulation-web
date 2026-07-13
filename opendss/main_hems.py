@@ -5,7 +5,7 @@
 # step5定義負載
 # step5定義負載
 # step6設定基準並使用solve去執行
-
+import opendssdirect as dss
 from hems_basecontrol import run_basecontrol_simulation# 從 hems_basecontrol 這個檔案中，引入 run_basecontrol_simulation 函式
 import os
 
@@ -41,6 +41,15 @@ def main():
         print(f"\n❌ 存檔失敗！電腦給的錯誤原因：{e}")#用except Exception as e:來捕捉所有的錯誤，並且將錯誤訊息存到變數e中，方便後續使用。
 
     
-
+#印出所有節點的電壓，方便檢查電路是否正確
 if __name__ == "__main__":
     main()
+    # 取得所有節點名稱與實際電壓
+    #node_names = dss.Circuit.AllNodeNames()
+    #act_voltages = dss.Circuit.AllBusVMag()
+    
+    #print("\n=== 🕵️ 變壓器源頭電壓大揭密 ===")
+    # 我們只印出前 3 個節點（通常第一個就是電源或變壓器二次側）
+    #for i in range(min(60, len(node_names))):
+     #   print(f"節點名稱: {node_names[i]:<15} | 真實物理電壓: {act_voltages[i]:.2f} V")
+    #print("==================================\n")

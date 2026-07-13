@@ -4,7 +4,7 @@ import os
 
 
 def build_circuit():
-    """負責建立 15 分鐘解析度的微電網實體電路，並回傳指令清單"""
+    """建立 15 分鐘解析度的電網實體電路，並回傳指令清單"""
     
     dss.Basic.ClearAll()
     
@@ -35,11 +35,11 @@ def build_circuit():
 
    
 # ==========================================
-# ep盤設備共16個 每個假設以100W全天運轉 A電表理論值每小時1.6Kw 
+# ep盤設備共16個 每個假設以100W全天運轉 A電表理論值每小時1.6Kw 不含插座是13個 一個小時100w=1.3kw
 # 但A電表需考慮到ep盤上面的儲能系統 A電表的紀錄值應該為 -(儲能系統放電量-ep盤負載消耗量)
-# L1盤設備共10個 每個假設以200W全天運轉 B電表理論值每小時2Kw
-# L2盤設備共14個 每個假設以300W全天運轉 C電表理論值每小時4.2Kw
-# L3盤設備共11個 每個假設以400W全天運轉 D電表理論值每小時4.4Kw
+# L1盤設備共10個 每個假設以200W全天運轉 B電表理論值每小時2Kw   不含插座是4個 一個小時200w=0.8kw
+# L2盤設備共14個 每個假設以300W全天運轉 C電表理論值每小時4.2Kw 不含插座是6個 一個小時300w=1.8kw
+# L3盤設備共11個 每個假設以400W全天運轉 D電表理論值每小時4.4Kw 不含插座是3個 一個小時400w=1.2kw
 # ==========================================
 
 
@@ -130,7 +130,7 @@ def build_circuit():
         # kWhrated 電池的總能量容量（電量），即 20 度電。pf=1.0:
         # 預設功因為 1.0。state=IDLING:
         # 初始狀態設定。IDLING: 待機中，既不充電也不放電。後續可透過指令改為 CHARGING（充電）或 DISCHARGING（放電）。
-        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=5.0 kWrated=5.0 kWhrated=20.0 pf=1.0 state=IDLING  %stored=50",
+        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=5.0 kWrated=5.0 kWhrated=20.0 pf=1.0 state=IDLING  %stored=50 %IdlingKw=0",
 
 # ==========================================
 # ATS 自動轉換開關與 EP 配電盤 (停電備援邏輯)
@@ -189,7 +189,7 @@ def build_circuit():
         "New Line.EP_Br10 Bus1=EP_Panel.1.0 Bus2=EP_j.1.0 LineCode=wire_2mm2_1p Length=0.02 units=km",#從一樓拉到二樓又需要覆蓋 二樓電燈 20公尺
         "New Load.EP_2F_Lighting1_AN phases=1 Bus1=EP_j.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_2f_lighting1_an",
 
-        # 2F 插座  線路 11
+        # 2F 照明  線路 11
         "New Line.EP_Br11 Bus1=EP_Panel.2.0 Bus2=EP_k.2.0 LineCode=wire_2mm2_1p Length=0.02 units=km",
         "New Load.EP_2F_Lighting2_BN phases=1 Bus1=EP_k.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_2f_lighting2_bn",
 
