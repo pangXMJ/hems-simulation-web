@@ -29,6 +29,7 @@ def run_basecontrol_simulation():
 
     # 電錶定義
     meter_targets = {
+        "總電錶T":"KwhT",
         "PV電錶": "MeterPV",
         "A電錶": "KwhA",
         "B電錶": "KwhB",
@@ -68,13 +69,11 @@ def run_basecontrol_simulation():
         if soc >= 99.9 and not is_island_mode:
             is_island_mode = True
             dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
-            dss.Text.Command("Edit Line.Inv_to_EP enabled=yes")
             print(f"[{time_str}] 🔋電池滿電！ATS切斷市電，EP盤改由「電池供電」。")
 
         elif soc <= 20.0 and is_island_mode:
             is_island_mode = False
             dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
-            dss.Text.Command("Edit Line.Inv_to_EP enabled=no")
             print(f"[{time_str}] ⚠️電池低電量！ATS接回市電，開始充電。")  
 
         # ==========================================
@@ -139,7 +138,7 @@ def run_basecontrol_simulation():
             if p_name == "EP":
                 dss.Circuit.SetActiveElement("Line.ATS_to_EP")
                 if not dss.CktElement.Enabled():
-                    line_name = "Line.Inv_to_EP"
+                    line_name = "Line.Inv_AC_Main"
 
             dss.Circuit.SetActiveElement(line_name)
             curr_mag_ang = dss.CktElement.CurrentsMagAng()

@@ -85,6 +85,12 @@ def build_circuit():
 
      
 
+# ==========================================
+# 接電錶 T T意思是total也就是總電錶，總電錶下面要接A、B、C、D
+# ==========================================
+        # 總電錶 KwhT，創造一條線到電錶T 叫做 ToMeterT=進屋線，指定從變壓器2次側 MeterABN，拉線過來接，因為電錶不具有實體接點，所以幫他創造一個叫做 MeterT，將電錶 KwhT 掛在線上 ToMeterT
+        "New Line.ToMeterT Bus1=MeterABN.1.2 Bus2=MeterT.1.2 LineCode=wire_100mm2 Length=0.002 units=km",  # 2公尺
+        "New EnergyMeter.KwhT element=Line.ToMeterT terminal=1",
 
 
 # ==========================================
@@ -98,12 +104,12 @@ def build_circuit():
         # dss.Text.Command("New Line.[名稱] Phases=[相數] Bus1=[起點] Bus2=[終點] R1=[正序電阻] X1=[正序電抗] Length=[長度] Units=[單位]")
         # 掛上電錶語法：New EnergyMeter.名稱 Element=元件名稱 Terminal=端子編號
 
-        # 第一組電錶 KwhA，創造一條線到電錶A 叫做 ToMeterA=進屋線，指定從變壓器2次側 MeterABN，拉線過來接，因為電錶不具有實體接點，所以幫他創造一個叫做 MeterA，將電錶 KwhA 掛在線上 ToMeterA
-        "New Line.ToMeterA Bus1=MeterABN.1.2 Bus2=MeterA.1.2 LineCode=wire_30mm2 Length=0.002 units=km",  # 2公尺
+        # EP盤電錶 KwhA，創造一條線到電錶A，從KwhT拉線過來接，因為電錶不具有實體接點，所以幫他創造一個叫做 MeterA，將電錶 KwhA 掛在線上 ToMeterA
+        "New Line.ToMeterA Bus1=MeterT.1.2 Bus2=MeterA.1.2 LineCode=wire_30mm2 Length=0.002 units=km",  # 2公尺
         "New EnergyMeter.KwhA element=Line.ToMeterA terminal=1",
 
         # 建立逆變器交流端匯流排 (Inv_AC)，並與 KwhA 連接 (雙向併網路徑)
-        "New Line.Inv_AC_Main Bus1=MeterA.1.2 Bus2=Inv_AC.1.2 LineCode=wire_30mm2 Length=0.015 units=km",#如果逆變器裝在頂樓，交流電線要拉到一樓總盤，大約需要 15 公尺
+        "New Line.Inv_AC_Main Bus1=EP_panel.1.2 Bus2=Inv_AC.1.2 LineCode=wire_30mm2 Length=0.015 units=km",#如果逆變器裝在頂樓，交流電線要拉到一樓總盤，大約需要 15 公尺
 
 
 # ==========================================
@@ -111,8 +117,7 @@ def build_circuit():
 # ==========================================
 
         # 1. 建立一條極短的線，連接 PV 專屬節點與 Inv_AC 匯流排
-        "New Line"
-        ".ToMeterPV Bus1=PV_Node.1.2 Bus2=Inv_AC.1.2 LineCode=wire_30mm2 Length=0.005 units=km",
+        "New Line.ToMeterPV Bus1=PV_Node.1.2 Bus2=Inv_AC.1.2 LineCode=wire_30mm2 Length=0.005 units=km",
 
         # 2. 將新增的電錶 (MeterPV) 掛在這條短線上，Terminal=1 量測從 PV 流出的電力
         "New EnergyMeter.MeterPV element=Line.ToMeterPV terminal=1",
@@ -130,7 +135,7 @@ def build_circuit():
         # kWhrated 電池的總能量容量（電量），即 20 度電。pf=1.0:
         # 預設功因為 1.0。state=IDLING:
         # 初始狀態設定。IDLING: 待機中，既不充電也不放電。後續可透過指令改為 CHARGING（充電）或 DISCHARGING（放電）。
-        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=5.0 kWrated=5.0 kWhrated=20.0 pf=1.0 state=IDLING  %stored=50 %IdlingKw=0",
+        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 state=IDLING  %stored=50 %IdlingKw=0",
 
 # ==========================================
 # ATS 自動轉換開關與 EP 配電盤 (停電備援邏輯)
@@ -139,8 +144,8 @@ def build_circuit():
         # [ATS 切換路徑 1] 平常由市電 (MeterA) 供電給 EP 盤，預設為開啟 (enabled=yes)
         "New Line.ATS_to_EP Bus1=MeterA.1.2 Bus2=EP_panel.1.2 LineCode=wire_30mm2 Length=0.01 units=km enabled=yes",
 
-        # [ATS 切換路徑 2] 停電時由逆變器 (Inv_AC) 供電給 EP 盤，預設為關閉 (enabled=no)
-        "New Line.Inv_to_EP Bus1=Inv_AC.1.2 Bus2=EP_Panel.1.2 LineCode=wire_30mm2 Length=0.01 units=km enabled=no",
+        
+        
 
 # ==========================================
 # A電錶接負載 EP PANEL (Loads) 設定
@@ -220,15 +225,15 @@ def build_circuit():
 
         # 第二組電錶 KwhB
         # B，創造一條線到電錶B 叫做 ToMeterB=進屋線，指定從變壓器2次側 MeterABN，拉線過來接，因為電錶不具有實體接點，所以幫他創造一個叫做 MeterB，將電錶 KwhB 掛在線上 ToMeterB
-        "New Line.ToMeterB Bus1=MeterABN.1.2 Bus2=MeterB.1.2 LineCode=wire_30mm2 Length=0.005 units=km",
+        "New Line.ToMeterB Bus1=MeterT.1.2 Bus2=MeterB.1.2 LineCode=wire_30mm2 Length=0.005 units=km",
         "New EnergyMeter.KwhB element=Line.ToMeterB terminal=1",
 
         # 第三組電錶 KwhC，創造一條線到電錶C叫做 ToMeterC=進屋線，指定從變壓器2次側 MeterABN，拉線過來接，因為電錶不具有實體接點，所以幫他創造一個叫做 MeterC，將電錶 KwhC 掛在線上 ToMeterC
-        "New Line.ToMeterC Bus1=MeterABN.1.2 Bus2=MeterC.1.2 LineCode=wire_30mm2 Length=0.005 units=km",
+        "New Line.ToMeterC Bus1=MeterT.1.2 Bus2=MeterC.1.2 LineCode=wire_30mm2 Length=0.005 units=km",
         "New EnergyMeter.KwhC element=Line.ToMeterC terminal=1",
 
         # 第四組電錶 KwhD，創造一條線到電錶D叫做 ToMeterD=進屋線，指定從變壓器2次側 MeterABN，拉線過來接，因為電錶不具有實體接點，所以幫他創造一個叫做 MeterD，將電錶 KwhD 掛在線上 ToMeterD
-        "New Line.ToMeterD Bus1=MeterABN.1.2 Bus2=MeterD.1.2 LineCode=wire_30mm2 Length=0.005 units=km",
+        "New Line.ToMeterD Bus1=MeterT.1.2 Bus2=MeterD.1.2 LineCode=wire_30mm2 Length=0.005 units=km",
         "New EnergyMeter.KwhD element=Line.ToMeterD terminal=1",
 
         # 掛在各電錶匯流排對應的進線上，Terminal=1 量測進入方向
