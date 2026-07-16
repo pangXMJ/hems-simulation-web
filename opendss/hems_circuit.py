@@ -164,15 +164,15 @@ def build_circuit():
         "New Line.EP_Br3 Bus1=EP_Panel.1.0 Bus2=EP_c.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",#盤體拉到牆壁插座6公尺
         "New Load.EP_1F_WiFi_AN phases=1 Bus1=EP_c.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_1f_wifi_an",
 
-        # 1F 插座  線路 4
-        "New Line.EP_Br4 Bus1=EP_Panel.2.0 Bus2=EP_d.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.EP_1F_socket_BN phases=1 Bus1=EP_d.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_1f_socket_bn",
+        # 1F 插座220v/電熱水器  線路 4
+        "New Line.EP_Br4 Bus1=EP_Panel.1.2 Bus2=EP_d.1.2 LineCode=wire_5p5mm2_2p Length=0.006 units=km",
+        "New Load.EP_1F_WaterHeater_BN phases=1 Bus1=EP_d.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_ep_1f_WaterHeater_abn",
 
         # 1F 廚房專插/冰箱 線路 5
         "New Line.EP_Br5 Bus1=EP_Panel.1.0 Bus2=EP_e.1.0 LineCode=wire_5p5mm2_1p Length=0.01 units=km",#通常在 1F 後方或靠近陽台，距離 1F 盤較遠大概10公尺
         "New Load.EP_Fridge_AN phases=1 Bus1=EP_e.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_fridge_an",
 
-        # 1F 廚房專插 線路 6
+        # 1F 廚房專插  線路 6
         "New Line.EP_Br6 Bus1=EP_Panel.2.0 Bus2=EP_f.2.0 LineCode=wire_5p5mm2_1p Length=0.01 units=km",
         "New Load.EP_Kitchen_BN phases=1 Bus1=EP_f.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_kitchen_bn",
 
@@ -290,9 +290,9 @@ def build_circuit():
         "New Line.L1_Br8 Bus1=panel1F.2.0 Bus2=L1_h.2.0 LineCode=wire_5p5mm2_1p Length=0.08 units=km",  # 110
         "New Load.L1_socket6_BN  phases=1  Bus1=L1_h.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_socket6_bn",
 
-        # 插座 廚房線路 9,L1_Br9, L1_i
-        "New Line.L1_Br9 Bus1=panel1F.1.2 Bus2=L1_i.1.2 LineCode=wire_5p5mm2_2p Length=0.012 units=km",  # 110
-        "New Load.L1_Kitchen_ABN  phases=1  Bus1=L1_i.1.2   kV=0.22 kW=1 pf=1 model=1 Daily=Shape_l1_kitchen_abn",
+        # 插座 廚房線路/家用電磁爐 9,L1_Br9, L1_i
+        "New Line.L1_Br9 Bus1=panel1F.1.2 Bus2=L1_i.1.2 LineCode=wire_5p5mm2_2p Length=0.012 units=km",  # 110       
+        "New Load.L1_InductionCooktop_ABN  phases=1  Bus1=L1_i.1.2   kV=0.22 kW=1 pf=1 model=1 Daily=Shape_l1_InductionCooktop_abn",
 
         # 冷氣 線路 10,L1_Br10, L1_j
         "New Line.L1_Br10 Bus1=panel1F.1.2 Bus2=L1_j.1.2 LineCode=wire_5p5mm2_2p Length=0.012 units=km",  # 110
@@ -342,10 +342,9 @@ def build_circuit():
         "New Line.L2_Br9 Bus1=panel2F.1.0 Bus2=L2_i.1.0 LineCode=wire_5p5mm2_2p Length=0.006 units=km", #110
         "New Load.L2_socket7_AN  phases=1  Bus1=L2_i.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_socket7_an",
 
-        # 插座 線路 10,L2_Br10, L2_j
+        # 插座/除濕機 線路 10,L2_Br10, L2_j
         "New Line.L2_Br10 Bus1=panel2F.2.0 Bus2=L2_j.2.0 LineCode=wire_5p5mm2_2p Length=0.006 units=km", #110
-        "New Load.L2_socket8_BN  phases=1  Bus1=L2_j.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_socket8_bn",
-
+        "New Load.L2_Dehumidifier_BN  phases=1  Bus1=L2_j.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_Dehumidifier_bn",
 
         # 浴室插座 線路 11,L2_Br11, L2_k
         "New Line.L2_Br11 Bus1=panel2F.1.0 Bus2=L2_k.1.0 LineCode=wire_5p5mm2_1p Length=0.01 units=km",

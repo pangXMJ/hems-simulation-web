@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HEMS — 家庭能源系統</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#050506;
+  --bg-2:#0a0a0b;
+  --panel:#0f0f11;
+  --card:#121214;
+  --line:rgba(255,255,255,0.09);
+  --line-soft:rgba(255,255,255,0.05);
+  --white:#f3f2ee;
+  --dim:#8a8a90;
+  --faint:#4d4d52;
+  --accent:#c8ff4d;
+  --accent-dim:rgba(200,255,77,0.10);
+  --accent-line:rgba(200,255,77,0.35);
+  --off:#ff5a5a;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--white);
+  font-family:'Inter','Noto Sans TC',sans-serif;
+  font-weight:400;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.display{font-family:'Bebas Neue','Noto Sans TC',sans-serif; letter-spacing:0.5px;}
+.mono{font-family:'Space Mono',monospace;}
+.tc{font-family:'Noto Sans TC',sans-serif;}
+a{color:inherit;}
+::selection{background:var(--accent); color:#050506;}
+
+/* reveal */
+.reveal{opacity:0; transform:translateY(28px); transition:opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1);}
+.reveal.in{opacity:1; transform:translateY(0);}
+.reveal.d1{transition-delay:.08s;} .reveal.d2{transition-delay:.16s;} .reveal.d3{transition-delay:.24s;}
+
+/* ---------- nav ---------- */
+.topbar{
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:26px 5vw;
+  transition:all .4s ease;
+  border-bottom:1px solid transparent;
+}
+.topbar.scrolled{
+  background:rgba(5,5,6,0.82);
+  backdrop-filter:blur(14px);
+  padding:16px 5vw;
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:center; gap:11px; cursor:pointer;}
+.brand .ring{
+  width:22px; height:22px; border-radius:50%;
+  border:2px solid var(--accent);
+  position:relative;
+}
+.brand .ring::after{content:'';position:absolute; inset:5px; border-radius:50%; background:var(--accent); opacity:.9;}
+.brand span{font-family:'Bebas Neue'; font-size:20px; letter-spacing:2px;}
+.nav-right{display:flex; align-items:center; gap:34px;}
+.crumb{color:var(--dim); font-size:11px; letter-spacing:1.5px; text-transform:uppercase; font-family:'Space Mono',monospace;}
+.crumb b{color:var(--accent); font-weight:400;}
+
+/* ---------- hero ---------- */
+.hero{
+  position:relative; min-height:100vh;
+  display:flex; flex-direction:column; justify-content:flex-end;
+  padding:0 5vw 70px;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 38%, rgba(200,255,77,0.06), transparent 70%),
+    radial-gradient(ellipse 90% 60% at 50% 0%, #131316, var(--bg) 65%);
+  overflow:hidden;
+}
+.hero-eyebrow{
+  position:absolute; top:130px; left:5vw;
+  font-family:'Space Mono'; font-size:11px; letter-spacing:4px; color:var(--dim); text-transform:uppercase;
+}
+.hero-stage{
+  position:absolute; top:100px; left:0; right:0; bottom:180px;
+  display:flex; align-items:center; justify-content:center;
+}
+.hotspot-svg{width:min(1180px,92vw); height:auto; overflow:visible;}
+.hero-title-row{position:relative; z-index:5; display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:24px;}
+.hero-title{
+  font-family:'Bebas Neue'; font-size:clamp(64px,11vw,168px); line-height:0.86;
+  margin:0; letter-spacing:1px; color:var(--white);
+}
+.hero-title .accent-dot{color:var(--accent);}
+.hero-sub{max-width:340px; color:var(--dim); font-size:14px; line-height:1.8; padding-bottom:10px;}
+.scroll-cue{
+  position:absolute; bottom:26px; left:50%; transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center; gap:8px;
+  color:var(--faint); font-family:'Space Mono'; font-size:10px; letter-spacing:3px;
+}
+.scroll-cue .bar{width:1px; height:34px; background:linear-gradient(var(--faint), transparent); animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:.3;}50%{opacity:1;}}
+
+/* hotspot markers - configurator style */
+.marker-num{
+  font-family:'Space Mono'; font-size:12px; font-weight:700; color:#050506;
+  width:26px; height:26px; border-radius:50%; background:var(--accent);
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 0 0 4px rgba(200,255,77,0.15);
+}
+.hotspot-line{stroke:rgba(255,255,255,0.28); stroke-width:1.2; fill:none;}
+.hotspot-chip{
+  all:unset; cursor:pointer; display:flex; align-items:center; gap:9px;
+  padding:0 4px; height:100%; width:100%;
+}
+.hotspot-chip .idx{color:var(--accent); font-family:'Space Mono'; font-size:11px; font-weight:700; flex:none;}
+.hotspot-chip .lbl{
+  font-size:13.5px; font-weight:500; color:var(--dim); white-space:nowrap;
+  border-bottom:1px solid transparent; transition:.2s;
+}
+.hotspot-chip:hover .lbl{color:var(--white); border-color:var(--accent);}
+
+/* ---------- section shell ---------- */
+.section{max-width:1360px; margin:0 auto; padding:150px 5vw;}
+.section.tight{padding-top:80px;}
+.section-head{display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:52px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:30px;}
+.idx-num{font-family:'Space Mono'; font-size:12px; color:var(--accent); letter-spacing:2px;}
+.section-head h2{font-family:'Bebas Neue'; font-size:clamp(34px,4.4vw,64px); margin:8px 0 0; letter-spacing:0.5px; line-height:1;}
+.section-head p{color:var(--dim); font-size:13.5px; max-width:320px; text-align:right; line-height:1.7; margin:0;}
+@media(max-width:800px){.section-head p{text-align:left;}}
+
+.card{background:var(--card); border:1px solid var(--line); border-radius:2px; padding:30px;}
+.grid-2{display:grid; grid-template-columns:1.35fr 1fr; gap:1px; background:var(--line);}
+.grid-2 > .card{border-radius:0; border:none;}
+.grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line);}
+.grid-3 > .card{border-radius:0; border:none;}
+@media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr;}}
+
+.spec-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin-bottom:8px;}
+.spec-val{font-family:'Space Mono'; font-size:34px; font-weight:700; letter-spacing:-1px;}
+.stat-row{display:flex; gap:44px; margin-bottom:26px; flex-wrap:wrap;}
+canvas{max-width:100%;}
+
+.chart-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin:0 0 18px;}
+
+/* toggle list — spec sheet rows */
+.toggle-item{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:15px 0; border-bottom:1px solid var(--line-soft);
+  font-size:14px; font-weight:500;
+}
+.toggle-item:last-child{border-bottom:none;}
+.switch{position:relative; width:38px; height:20px; border-radius:2px; background:#1c1c1f; flex:none; transition:.2s;}
+.switch.on{background:var(--accent-dim); border:1px solid var(--accent-line);}
+.switch::after{content:'';position:absolute; top:3px; left:3px; width:12px; height:12px; background:var(--faint); transition:.2s;}
+.switch.on::after{left:19px; background:var(--accent);}
+
+.savings-box{
+  border-top:1px solid var(--line); margin-top:24px; padding-top:24px;
+  display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:10px;
+}
+.savings-box .spec-label{margin-bottom:6px;}
+.savings-box .big{font-family:'Space Mono'; font-size:38px; font-weight:700; color:var(--accent);}
+.savings-box .delta{color:var(--dim); font-size:12.5px; font-family:'Space Mono';}
+
+.explain-card{padding:30px; display:flex; flex-direction:column; justify-content:center;}
+.explain-card .spec-label{color:var(--accent);}
+.explain-card p{margin:0; font-size:14px; line-height:1.9; color:var(--dim); font-weight:300;}
+
+.badge{font-family:'Space Mono'; font-size:11px; letter-spacing:1px; padding:5px 12px; border:1px solid; text-transform:uppercase;}
+.badge-on{color:var(--accent); border-color:var(--accent-line); background:var(--accent-dim);}
+.badge-off{color:var(--off); border-color:rgba(255,90,90,0.35); background:rgba(255,90,90,0.08);}
+
+/* buttons */
+.btn-line{
+  all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:10px;
+  font-family:'Space Mono'; font-size:11.5px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--dim); padding-bottom:6px; border-bottom:1px solid var(--line);
+  transition:.25s;
+}
+.btn-line:hover{color:var(--white); border-color:var(--accent);}
+.btn-line:hover .arrow{transform:translateX(4px);}
+.arrow{transition:.25s; display:inline-block;}
+
+/* ---------- detail pages ---------- */
+.detail-page{display:none;}
+.detail-page.active{display:block;}
+.detail-hero{
+  min-height:56vh; display:flex; align-items:center; padding:120px 5vw 60px;
+  background:radial-gradient(ellipse 70% 70% at 70% 40%, rgba(200,255,77,0.05), transparent 70%);
+  border-bottom:1px solid var(--line);
+}
+.detail-hero-inner{display:grid; grid-template-columns:1fr 1.4fr; gap:60px; align-items:center; width:100%; max-width:1360px; margin:0 auto;}
+.detail-icon{display:flex; align-items:center; justify-content:center;}
+.detail-title-block .spec-label{margin-bottom:16px;}
+.detail-title-block h1{font-family:'Bebas Neue'; font-size:clamp(48px,7vw,110px); margin:0; line-height:0.9;}
+@media(max-width:900px){.detail-hero-inner{grid-template-columns:1fr;}}
+
+.spec-sheet{border-top:1px solid var(--line);}
+.spec-sheet-row{
+  display:flex; align-items:baseline; justify-content:space-between;
+  padding:22px 0; border-bottom:1px solid var(--line-soft);
+}
+.spec-sheet-row .k{font-family:'Space Mono'; font-size:11px; letter-spacing:2px; color:var(--faint); text-transform:uppercase;}
+.spec-sheet-row .v{font-family:'Space Mono'; font-size:22px; font-weight:700;}
+
+footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); font-size:11.5px; text-align:center; font-family:'Space Mono';}
+footer a{color:var(--accent); text-decoration:none;}
+</style>
+</head>
+<body>
+
+<div class="topbar" id="topbar">
+  <div class="brand" onclick="navigate('home')">
+    <div class="ring"></div>
+    <span>HEMS</span>
+  </div>
+  <div class="nav-right">
+    <div class="crumb" id="crumbText">主頁 / HOME</div>
+  </div>
+</div>
+
+<!-- ============ HOME VIEW ============ -->
+<div id="home-view">
+
+  <section class="hero">
+    <p class="hero-eyebrow">Home Energy Management System — 即時能源監控展示</p>
+    <div class="hero-stage">
+      <svg id="hotspotSvg" class="hotspot-svg" viewBox="0 0 1200 620" xmlns="http://www.w3.org/2000/svg">
+        <path class="hotspot-line" d="M598,255 L280,190"></path>
+        <path class="hotspot-line" d="M612,430 L290,470"></path>
+        <path class="hotspot-line" d="M760,330 L940,270"></path>
+        <path class="hotspot-line" d="M760,150 L940,80"></path>
+        <path class="hotspot-line" d="M880,470 L950,420"></path>
+        <path class="hotspot-line" d="M865,545 L950,545"></path>
+
+        <g opacity="0.9">
+          <polygon points="560,150 780,150 860,215 480,215" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.4"></polygon>
+          <rect x="500" y="215" width="340" height="90" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.4"></rect>
+          <rect x="500" y="305" width="340" height="90" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.4"></rect>
+          <rect x="500" y="395" width="340" height="150" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1.4"></rect>
+          <rect x="520" y="235" width="55" height="45" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.16)"></rect>
+          <rect x="765" y="235" width="55" height="45" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.16)"></rect>
+          <rect x="520" y="325" width="55" height="45" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.16)"></rect>
+          <rect x="765" y="325" width="55" height="45" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.16)"></rect>
+          <rect x="638" y="450" width="70" height="95" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.16)"></rect>
+          <rect x="850" y="470" width="40" height="60" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.16)"></rect>
+          <rect x="850" y="500" width="40" height="60" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.16)"></rect>
+          <line x1="600" y1="152" x2="700" y2="80" stroke="rgba(255,255,255,0.22)" stroke-width="1.6"></line>
+          <line x1="700" y1="80" x2="800" y2="152" stroke="rgba(255,255,255,0.22)" stroke-width="1.6"></line>
+          <rect x="672" y="95" width="60" height="12" fill="#c8ff4d" opacity="0.75" transform="rotate(-18 700 100)"></rect>
+        </g>
+
+        <circle cx="598" cy="255" r="4" fill="#c8ff4d"></circle>
+        <circle cx="612" cy="430" r="4" fill="#c8ff4d"></circle>
+        <circle cx="760" cy="330" r="4" fill="#c8ff4d"></circle>
+        <circle cx="760" cy="150" r="4" fill="#c8ff4d"></circle>
+        <circle cx="880" cy="470" r="4" fill="#c8ff4d"></circle>
+        <circle cx="865" cy="545" r="4" fill="#c8ff4d"></circle>
+
+        <foreignObject x="80" y="164" width="200" height="52">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
+            <button class="hotspot-chip" onclick="navigate('floor3')"><span class="idx">03</span><span class="lbl">3F 設施</span></button>
+          </div>
+        </foreignObject>
+        <foreignObject x="80" y="444" width="200" height="52">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
+            <button class="hotspot-chip" onclick="navigate('floor1')"><span class="idx">01</span><span class="lbl">1F 設施</span></button>
+          </div>
+        </foreignObject>
+        <foreignObject x="950" y="244" width="200" height="52">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
+            <button class="hotspot-chip" onclick="navigate('floor2')"><span class="idx">02</span><span class="lbl">2F 設施</span></button>
+          </div>
+        </foreignObject>
+        <foreignObject x="950" y="54" width="230" height="52">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
+            <button class="hotspot-chip" onclick="navigate('solar')"><span class="idx">04</span><span class="lbl">太陽能與儲能</span></button>
+          </div>
+        </foreignObject>
+        <foreignObject x="950" y="394" width="200" height="52">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
+            <button class="hotspot-chip" onclick="navigate('meter')"><span class="idx">05</span><span class="lbl">電錶總覽</span></button>
+          </div>
+        </foreignObject>
+        <foreignObject x="950" y="519" width="220" height="52">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
+            <button class="hotspot-chip" onclick="navigate('panel')"><span class="idx">06</span><span class="lbl">配電盤總覽</span></button>
+          </div>
+        </foreignObject>
+      </svg>
+    </div>
+
+    <div class="hero-title-row">
+      <h1 class="hero-title">家庭能源<br>系統<span class="accent-dot">.</span></h1>
+      <p class="hero-sub tc">點選節點進入樓層 / 電錶 / 配電盤 / 太陽能儲能系統的即時監控頁面。全站數據來源為 CSV 檔案。</p>
+    </div>
+
+    <div class="scroll-cue"><span>SCROLL</span><div class="bar"></div></div>
+  </section>
+
+  <!-- ===== Section 01 ===== -->
+  <div class="section">
+    <div class="section-head reveal">
+      <div>
+        <div class="idx-num">01 — SIMULATION</div>
+        <h2>PSO 智慧家庭<br>負載模擬</h2>
+      </div>
+      <p class="tc">粒子群演算法依據即時裝置狀態模擬全日用電曲線，並估算優化後的電費效益。</p>
+    </div>
+    <div class="grid-2 reveal">
+      <div class="card">
+        <div class="stat-row">
+          <div><div class="spec-label">今日總用電量</div><div class="spec-val" id="statTodayKwh">--</div></div>
+          <div><div class="spec-label">啟用設備數</div><div class="spec-val" id="statDeviceCount">--</div></div>
+        </div>
+        <p class="chart-label">HOURLY LOAD (kW)</p>
+        <canvas id="loadChart" height="200"></canvas>
+      </div>
+      <div class="card">
+        <div id="toggleList"></div>
+        <div class="savings-box">
+          <div>
+            <div class="spec-label">優化後日電費</div>
+            <div class="big" id="costAfter">NT$ --</div>
+          </div>
+          <div class="delta" id="costDelta">--</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Section 02 ===== -->
+  <div class="section">
+    <div class="section-head reveal">
+      <div>
+        <div class="idx-num">02 — OPTIMIZATION</div>
+        <h2>POS 儲能<br>排程最佳化</h2>
+      </div>
+      <p class="tc">於用電低谷引導放電、太陽能充裕時段安排充電，降低尖峰購電功率並平滑全日負載。</p>
+    </div>
+    <div class="grid-2 reveal">
+      <div class="card">
+        <p class="chart-label">GRID PURCHASE POWER</p>
+        <canvas id="gridChart" height="150"></canvas>
+        <p class="chart-label" style="margin-top:28px;">BATTERY CHARGE / DISCHARGE</p>
+        <canvas id="batteryChart" height="150"></canvas>
+      </div>
+      <div style="display:grid; grid-template-rows:1fr 1fr;">
+        <div class="card explain-card">
+          <div class="spec-label">數據解析</div>
+          <p>系統逐時段求解電池最佳充放電策略，在維持用電舒適度的前提下最小化尖峰負載與總電費支出。</p>
+        </div>
+        <div class="card explain-card" style="border-top:1px solid var(--line);">
+          <div class="spec-label">POS 解釋內容</div>
+          <p>粒子群演算法依前一日負載模式與電價區間迭代求解，收斂後輸出每小時最佳儲能排程。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Section 03 ===== -->
+  <div class="section">
+    <div class="section-head reveal">
+      <div>
+        <div class="idx-num">03 — OVERVIEW</div>
+        <h2>最佳化過程<br>與電池狀態</h2>
+      </div>
+      <p class="tc">PSO 收斂曲線顯示演算法逐步逼近最佳解，電池 SOC 曲線反映全日充放電節奏。</p>
+    </div>
+    <div class="grid-2 reveal">
+      <div class="card">
+        <p class="chart-label">PSO FITNESS CONVERGENCE</p>
+        <canvas id="fitnessChart" height="190"></canvas>
+      </div>
+      <div class="card">
+        <p class="chart-label">BATTERY STATE OF CHARGE (%)</p>
+        <canvas id="socChart" height="190"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ DETAIL PAGE ============ -->
+<div id="detail-view" class="detail-page">
+  <section class="detail-hero">
+    <div class="detail-hero-inner">
+      <div class="detail-icon" id="detailIcon"></div>
+      <div class="detail-title-block">
+        <button class="btn-line" onclick="navigate('home')"><span class="arrow">←</span> BACK TO HOME</button>
+        <div class="spec-label" style="margin-top:26px;" id="detailEyebrow">DEVICE</div>
+        <h1 id="detailTitle">--</h1>
+        <div style="margin-top:20px;"><span class="badge" id="detailBadge">--</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section tight">
+    <div class="grid-2">
+      <div class="card">
+        <div class="spec-sheet">
+          <div class="spec-sheet-row"><span class="k">功率 POWER</span><span class="v" id="detailPower">--</span></div>
+          <div class="spec-sheet-row"><span class="k">電壓 VOLTAGE</span><span class="v" id="detailVoltage">--</span></div>
+          <div class="spec-sheet-row"><span class="k">電流 CURRENT</span><span class="v" id="detailCurrent">--</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <p class="chart-label">24H POWER TREND (kW)</p>
+        <canvas id="detailChart" height="190"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  HEMS PROTOTYPE — DATA SOURCED FROM <a href="#">/data/*.csv</a> — FOR ACADEMIC PROJECT PREVIEW ONLY
+</footer>
+
+<script>
+/* ============================================================
+   資料層：CSV 讀取（fetch 失敗時退回內嵌 fallback，確保雙擊開啟也能預覽）
+   ============================================================ */
+const CSV_FALLBACK = {
+  devices: `id,label,icon_key,status,power_w,voltage_v,current_a,trend_scale
+floor1,1F設備總覽,floor,ON,110,110,1.0,1.0
+floor2,2F設備總覽,floor,ON,85,110,0.8,0.78
+floor3,3F設備總覽,floor,OFF,400,110,3.6,2.4
+meter,電錶總覽,meter,ON,3200,220,14.5,18.5
+panel,配電盤總覽,panel,ON,5000,220,22.7,26.0
+solar,太陽能及儲能系統,solar,ON,110,110,1.0,1.0`,
+  load: `hour,total_kw
+00:00,0.3
+01:00,0.2
+02:00,0.2
+03:00,0.2
+04:00,0.2
+05:00,0.3
+06:00,0.6
+07:00,4.2
+08:00,0.9
+09:00,0.5
+10:00,0.4
+11:00,4.4
+12:00,0.6
+13:00,0.5
+14:00,0.6
+15:00,0.7
+16:00,1.4
+17:00,1.9
+18:00,4.8
+19:00,4.3
+20:00,3.6
+21:00,1.8
+22:00,0.8
+23:00,0.4`,
+  grid: `hour,grid_kw
+0,0.05
+2,0.04
+4,0.03
+6,0.05
+8,0.06
+10,0.05
+12,0.9
+14,0.06
+16,0.05
+18,0.04
+20,0.05
+22,0.04`,
+  battery: `hour,battery_kw
+0,-1.1
+2,-0.6
+4,-0.5
+6,-0.3
+8,0.4
+10,1.1
+12,1.3
+14,1.2
+16,1.0
+18,-0.6
+20,-0.7
+22,-0.6`,
+  fitness: `iteration,fitness
+0,260
+20,60
+50,45
+100,38
+150,30
+200,25
+250,15
+300,6
+350,3
+400,2
+450,2
+500,2`,
+  soc: `hour,soc
+0,48
+2,34
+4,29
+6,26
+8,25
+10,28
+12,30
+14,85
+15,88
+16,87
+18,80
+20,64
+22,52
+23,49`,
+  summary: `metric,value
+today_kwh,18.37
+device_count,9
+cost_before,19.20
+cost_after,14.71
+savings_amount,4.49
+savings_pct,23.4`
+};
+
+async function loadCSV(name, path){
+  try{
+    const res = await fetch(path);
+    if(!res.ok) throw new Error('no file');
+    const text = await res.text();
+    return Papa.parse(text.trim(), {header:true, dynamicTyping:true}).data;
+  }catch(e){
+    return Papa.parse(CSV_FALLBACK[name].trim(), {header:true, dynamicTyping:true}).data;
+  }
+}
+
+const ICONS = {
+  floor: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="15" y="35" width="70" height="55" stroke="#c8ff4d" stroke-width="1.5"/><polygon points="10,38 50,10 90,38" stroke="#c8ff4d" stroke-width="1.5" fill="none"/><rect x="45" y="60" width="14" height="25" fill="#c8ff4d" opacity="0.45"/><rect x="25" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/><rect x="61" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/></svg>`,
+  meter: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="20" y="15" width="60" height="70" stroke="#c8ff4d" stroke-width="1.5"/><circle cx="50" cy="45" r="16" stroke="#c8ff4d" stroke-width="1.5"/><line x1="50" y1="45" x2="58" y2="34" stroke="#c8ff4d" stroke-width="1.5"/><line x1="35" y1="70" x2="65" y2="70" stroke="#c8ff4d" stroke-width="1.5"/></svg>`,
+  panel: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="22" y="10" width="56" height="80" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="25" x2="70" y2="25" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="40" x2="70" y2="40" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="55" x2="70" y2="55" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="70" x2="70" y2="70" stroke="#c8ff4d" stroke-width="1.5"/></svg>`,
+  solar: `<svg width="240" height="240" viewBox="0 0 100 100" fill="none"><polygon points="15,35 70,20 85,35 30,50" stroke="#c8ff4d" stroke-width="1.5"/><line x1="15" y1="35" x2="30" y2="50" stroke="#c8ff4d" stroke-width="1"/><line x1="70" y1="20" x2="85" y2="35" stroke="#c8ff4d" stroke-width="1"/><rect x="20" y="65" width="55" height="20" stroke="#c8ff4d" stroke-width="1.5"/><line x1="33" y1="65" x2="33" y2="85" stroke="#c8ff4d" stroke-width="1"/><line x1="46" y1="65" x2="46" y2="85" stroke="#c8ff4d" stroke-width="1"/><line x1="59" y1="65" x2="59" y2="85" stroke="#c8ff4d" stroke-width="1"/></svg>`
+};
+
+let charts = {};
+function killChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+
+const chartBase = {
+  responsive:true,
+  plugins:{legend:{display:false}},
+  scales:{
+    x:{ticks:{color:'#5a5a60', font:{family:'Space Mono', size:9}}, grid:{color:'rgba(255,255,255,0.05)'}},
+    y:{ticks:{color:'#5a5a60', font:{family:'Space Mono', size:9}}, grid:{color:'rgba(255,255,255,0.05)'}}
+  }
+};
+
+async function initHome(){
+  const summaryRows = await loadCSV('summary','./data/summary.csv');
+  const S = {}; summaryRows.forEach(r=>S[r.metric]=r.value);
+  document.getElementById('statTodayKwh').textContent = S.today_kwh + ' 度';
+  document.getElementById('statDeviceCount').textContent = S.device_count + ' 台';
+  document.getElementById('costAfter').textContent = 'NT$ ' + S.cost_after;
+  document.getElementById('costDelta').textContent = '↓ -NT$' + S.savings_amount + ' (' + S.savings_pct + '%)';
+
+  const devices = await loadCSV('devices','./data/devices.csv');
+  const toggleWrap = document.getElementById('toggleList');
+  toggleWrap.innerHTML = devices.map(d=>`
+    <div class="toggle-item">
+      <span>${d.label.replace(/總覽|設備|設施/g,'')}</span>
+      <div class="switch ${d.status==='ON'?'on':''}"></div>
+    </div>`).join('');
+
+  const load = await loadCSV('load','./data/load_profile.csv');
+  killChart('loadChart');
+  charts.loadChart = new Chart(document.getElementById('loadChart'), {
+    type:'bar',
+    data:{labels:load.map(r=>r.hour), datasets:[{data:load.map(r=>r.total_kw), backgroundColor:'#c8ff4d', borderRadius:0}]},
+    options: chartBase
+  });
+
+  const grid = await loadCSV('grid','./data/grid_power.csv');
+  killChart('gridChart');
+  charts.gridChart = new Chart(document.getElementById('gridChart'), {
+    type:'bar',
+    data:{labels:grid.map(r=>r.hour), datasets:[{data:grid.map(r=>r.grid_kw), backgroundColor:'#f3f2ee', borderRadius:0}]},
+    options: chartBase
+  });
+
+  const bat = await loadCSV('battery','./data/battery_power.csv');
+  killChart('batteryChart');
+  charts.batteryChart = new Chart(document.getElementById('batteryChart'), {
+    type:'bar',
+    data:{labels:bat.map(r=>r.hour), datasets:[{data:bat.map(r=>r.battery_kw), backgroundColor:bat.map(r=>r.battery_kw>=0?'#c8ff4d':'#3a3a3e'), borderRadius:0}]},
+    options: chartBase
+  });
+
+  const fit = await loadCSV('fitness','./data/pso_fitness.csv');
+  killChart('fitnessChart');
+  charts.fitnessChart = new Chart(document.getElementById('fitnessChart'), {
+    type:'line',
+    data:{labels:fit.map(r=>r.iteration), datasets:[{data:fit.map(r=>r.fitness), borderColor:'#f3f2ee', backgroundColor:'transparent', tension:0.3, pointRadius:0, borderWidth:1.5}]},
+    options: chartBase
+  });
+
+  const soc = await loadCSV('soc','./data/battery_soc.csv');
+  killChart('socChart');
+  charts.socChart = new Chart(document.getElementById('socChart'), {
+    type:'line',
+    data:{labels:soc.map(r=>r.hour), datasets:[{data:soc.map(r=>r.soc), borderColor:'#c8ff4d', backgroundColor:'rgba(200,255,77,0.06)', fill:true, tension:0.3, pointRadius:0, borderWidth:1.5}]},
+    options: chartBase
+  });
+}
+
+async function initDetail(route){
+  const devices = await loadCSV('devices','./data/devices.csv');
+  const d = devices.find(x=>x.id===route);
+  if(!d) return;
+  document.getElementById('detailEyebrow').textContent = 'DEVICE / ' + route.toUpperCase();
+  document.getElementById('detailTitle').textContent = d.label;
+  const badge = document.getElementById('detailBadge');
+  badge.textContent = d.status;
+  badge.className = 'badge ' + (d.status==='ON' ? 'badge-on':'badge-off');
+  document.getElementById('detailPower').textContent = d.power_w + 'W';
+  document.getElementById('detailVoltage').textContent = d.voltage_v + 'V';
+  document.getElementById('detailCurrent').textContent = d.current_a + 'A';
+  document.getElementById('detailIcon').innerHTML = ICONS[d.icon_key] || '';
+
+  const trend = await loadCSV('load','./data/load_profile.csv');
+  const scaled = trend.map(r=> +(r.total_kw * d.trend_scale).toFixed(2));
+  killChart('detailChart');
+  charts.detailChart = new Chart(document.getElementById('detailChart'), {
+    type:'line',
+    data:{labels:trend.map(r=>r.hour), datasets:[{data:scaled, borderColor:'#c8ff4d', backgroundColor:'rgba(200,255,77,0.06)', fill:true, tension:0.3, pointRadius:0, borderWidth:1.5}]},
+    options: chartBase
+  });
+}
+
+const ROUTE_LABELS = {
+  home:'HOME', floor1:'1F 設施', floor2:'2F 設施', floor3:'3F 設施',
+  meter:'電錶總覽', panel:'配電盤總覽', solar:'太陽能與儲能'
+};
+
+function navigate(route){
+  document.getElementById('crumbText').innerHTML = route==='home'
+    ? '主頁 / HOME' : `主頁 <span style="opacity:.4">/</span> <b>${ROUTE_LABELS[route]}</b>`;
+
+  if(route==='home'){
+    document.getElementById('home-view').style.display='block';
+    document.getElementById('detail-view').classList.remove('active');
+  } else {
+    document.getElementById('home-view').style.display='none';
+    document.getElementById('detail-view').classList.add('active');
+    initDetail(route);
+  }
+  window.scrollTo({top:0, behavior:'instant'});
+  history.replaceState(null,'','#'+route);
+  setupReveal();
+}
+
+/* scroll reveal */
+function setupReveal(){
+  const els = document.querySelectorAll('.reveal:not(.observed)');
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{ if(e.isIntersecting) e.target.classList.add('in'); });
+  }, {threshold:0.12});
+  els.forEach(el=>{ el.classList.add('observed'); io.observe(el); });
+}
+
+/* nav scroll state */
+window.addEventListener('scroll', ()=>{
+  document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 40);
+});
+
+(function boot(){
+  initHome();
+  setupReveal();
+  const start = location.hash ? location.hash.slice(1) : 'home';
+  navigate(ROUTE_LABELS[start] ? start : 'home');
+})();
+</script>
+</body>
+</html>

@@ -10,6 +10,9 @@ def run_basecontrol_simulation():
     commands = build_circuit()#呼叫build_circuit()的程式。
     for cmd in commands:#讓cmd去儲存build_circult中每一行的opendss指令
         dss.Text.Command(cmd)#將cmd中的指令傳給opendss去執行
+        if dss.Error.Number() != 0:
+            print(f"❌ OpenDSS 編譯錯誤: {dss.Error.Description()} \n👉 出錯指令: {cmd}")
+            dss.Error.Number(0)
 
     print("✅ 基準電路建置完成！開始進行 15 分鐘步進模擬 (basecontrol)...\n")
     dss.Text.Command("Set mode=Daily stepsize=15m number=1")
