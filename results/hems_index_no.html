@@ -44,6 +44,7 @@ a{color:inherit;}
 /* reveal */
 .reveal{opacity:0; transform:translateY(28px); transition:opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1);}
 .reveal.in{opacity:1; transform:translateY(0);}
+.reveal.d1{transition-delay:.08s;} .reveal.d2{transition-delay:.16s;} .reveal.d3{transition-delay:.24s;}
 
 /* ---------- nav ---------- */
 .topbar{
@@ -106,7 +107,7 @@ a{color:inherit;}
 .scroll-cue .bar{width:1px; height:34px; background:linear-gradient(var(--faint), transparent); animation:pulse 2s infinite;}
 @keyframes pulse{0%,100%{opacity:.3;}50%{opacity:1;}}
 
-/* hotspot markers */
+/* hotspot markers - configurator style */
 .marker-num{
   font-family:'Space Mono'; font-size:12px; font-weight:700; color:#050506;
   width:26px; height:26px; border-radius:50%; background:var(--accent);
@@ -148,7 +149,7 @@ canvas{max-width:100%;}
 
 .chart-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin:0 0 18px;}
 
-/* toggle list */
+/* toggle list — spec sheet rows */
 .toggle-item{
   display:flex; align-items:center; justify-content:space-between;
   padding:15px 0; border-bottom:1px solid var(--line-soft);
@@ -172,6 +173,43 @@ canvas{max-width:100%;}
 .explain-card .spec-label{color:var(--accent);}
 .explain-card p{margin:0; font-size:14px; line-height:1.9; color:var(--dim); font-weight:300;}
 
+.badge{font-family:'Space Mono'; font-size:11px; letter-spacing:1px; padding:5px 12px; border:1px solid; text-transform:uppercase;}
+.badge-on{color:var(--accent); border-color:var(--accent-line); background:var(--accent-dim);}
+.badge-off{color:var(--off); border-color:rgba(255,90,90,0.35); background:rgba(255,90,90,0.08);}
+
+/* buttons */
+.btn-line{
+  all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:10px;
+  font-family:'Space Mono'; font-size:11.5px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--dim); padding-bottom:6px; border-bottom:1px solid var(--line);
+  transition:.25s;
+}
+.btn-line:hover{color:var(--white); border-color:var(--accent);}
+.btn-line:hover .arrow{transform:translateX(4px);}
+.arrow{transition:.25s; display:inline-block;}
+
+/* ---------- detail pages ---------- */
+.detail-page{display:none;}
+.detail-page.active{display:block;}
+.detail-hero{
+  min-height:56vh; display:flex; align-items:center; padding:120px 5vw 60px;
+  background:radial-gradient(ellipse 70% 70% at 70% 40%, rgba(200,255,77,0.05), transparent 70%);
+  border-bottom:1px solid var(--line);
+}
+.detail-hero-inner{display:grid; grid-template-columns:1fr 1.4fr; gap:60px; align-items:center; width:100%; max-width:1360px; margin:0 auto;}
+.detail-icon{display:flex; align-items:center; justify-content:center;}
+.detail-title-block .spec-label{margin-bottom:16px;}
+.detail-title-block h1{font-family:'Bebas Neue'; font-size:clamp(48px,7vw,110px); margin:0; line-height:0.9;}
+@media(max-width:900px){.detail-hero-inner{grid-template-columns:1fr;}}
+
+.spec-sheet{border-top:1px solid var(--line);}
+.spec-sheet-row{
+  display:flex; align-items:baseline; justify-content:space-between;
+  padding:22px 0; border-bottom:1px solid var(--line-soft);
+}
+.spec-sheet-row .k{font-family:'Space Mono'; font-size:11px; letter-spacing:2px; color:var(--faint); text-transform:uppercase;}
+.spec-sheet-row .v{font-family:'Space Mono'; font-size:22px; font-weight:700;}
+
 footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); font-size:11.5px; text-align:center; font-family:'Space Mono';}
 footer a{color:var(--accent); text-decoration:none;}
 </style>
@@ -179,7 +217,7 @@ footer a{color:var(--accent); text-decoration:none;}
 <body>
 
 <div class="topbar" id="topbar">
-  <div class="brand" onclick="window.location.href='hems_index.html'">
+  <div class="brand" onclick="navigate('home')">
     <div class="ring"></div>
     <span>HEMS</span>
   </div>
@@ -188,7 +226,9 @@ footer a{color:var(--accent); text-decoration:none;}
   </div>
 </div>
 
+<!-- ============ HOME VIEW ============ -->
 <div id="home-view">
+
   <section class="hero">
     <p class="hero-eyebrow">Home Energy Management System — 即時能源監控展示</p>
 
@@ -304,35 +344,34 @@ footer a{color:var(--accent); text-decoration:none;}
         <circle cx="1022.5" cy="428.8" r="4" fill="#c8ff4d"></circle>
         <circle cx="1022.5" cy="528.8" r="4" fill="#c8ff4d"></circle>
 
-        <!-- 這裡已經改為網頁實體跳轉了 -->
         <foreignObject x="60" y="164" width="200" height="52">
           <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
-            <button class="hotspot-chip" onclick="window.location.href='03_floor3.html'"><span class="idx">03</span><span class="lbl">3F 設施</span></button>
+            <button class="hotspot-chip" onclick="navigate('floor3')"><span class="idx">03</span><span class="lbl">3F 設施</span></button>
           </div>
         </foreignObject>
         <foreignObject x="60" y="534" width="200" height="52">
           <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
-            <button class="hotspot-chip" onclick="window.location.href='01_floor1.html'"><span class="idx">01</span><span class="lbl">1F 設施</span></button>
+            <button class="hotspot-chip" onclick="navigate('floor1')"><span class="idx">01</span><span class="lbl">1F 設施</span></button>
           </div>
         </foreignObject>
         <foreignObject x="1080" y="314" width="210" height="52">
           <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
-            <button class="hotspot-chip" onclick="window.location.href='02_floor2.html'"><span class="idx">02</span><span class="lbl">2F 設施</span></button>
+            <button class="hotspot-chip" onclick="navigate('floor2')"><span class="idx">02</span><span class="lbl">2F 設施</span></button>
           </div>
         </foreignObject>
         <foreignObject x="1080" y="54" width="230" height="52">
           <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
-            <button class="hotspot-chip" onclick="window.location.href='04_solar.html'"><span class="idx">04</span><span class="lbl">太陽能與儲能</span></button>
+            <button class="hotspot-chip" onclick="navigate('solar')"><span class="idx">04</span><span class="lbl">太陽能與儲能</span></button>
           </div>
         </foreignObject>
         <foreignObject x="1100" y="434" width="200" height="52">
           <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
-            <button class="hotspot-chip" onclick="window.location.href='05_meter.html'"><span class="idx">05</span><span class="lbl">電錶總覽</span></button>
+            <button class="hotspot-chip" onclick="navigate('meter')"><span class="idx">05</span><span class="lbl">電錶總覽</span></button>
           </div>
         </foreignObject>
         <foreignObject x="1100" y="534" width="210" height="52">
           <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;">
-            <button class="hotspot-chip" onclick="window.location.href='06_panel.html'"><span class="idx">06</span><span class="lbl">配電盤總覽</span></button>
+            <button class="hotspot-chip" onclick="navigate('panel')"><span class="idx">06</span><span class="lbl">配電盤總覽</span></button>
           </div>
         </foreignObject>
       </svg>
@@ -424,13 +463,44 @@ footer a{color:var(--accent); text-decoration:none;}
 
 </div>
 
+<!-- ============ DETAIL PAGE ============ -->
+<div id="detail-view" class="detail-page">
+  <section class="detail-hero">
+    <div class="detail-hero-inner">
+      <div class="detail-icon" id="detailIcon"></div>
+      <div class="detail-title-block">
+        <button class="btn-line" onclick="navigate('home')"><span class="arrow">←</span> BACK TO HOME</button>
+        <div class="spec-label" style="margin-top:26px;" id="detailEyebrow">DEVICE</div>
+        <h1 id="detailTitle">--</h1>
+        <div style="margin-top:20px;"><span class="badge" id="detailBadge">--</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section tight">
+    <div class="grid-2">
+      <div class="card">
+        <div class="spec-sheet">
+          <div class="spec-sheet-row"><span class="k">功率 POWER</span><span class="v" id="detailPower">--</span></div>
+          <div class="spec-sheet-row"><span class="k">電壓 VOLTAGE</span><span class="v" id="detailVoltage">--</span></div>
+          <div class="spec-sheet-row"><span class="k">電流 CURRENT</span><span class="v" id="detailCurrent">--</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <p class="chart-label">24H POWER TREND (kW)</p>
+        <canvas id="detailChart" height="190"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
 <footer>
   HEMS PROTOTYPE — DATA SOURCED FROM <a href="#">/data/*.csv</a> — FOR ACADEMIC PROJECT PREVIEW ONLY
 </footer>
 
 <script>
 /* ============================================================
-   資料層：CSV 讀取
+   資料層：CSV 讀取（fetch 失敗時退回內嵌 fallback，確保雙擊開啟也能預覽）
    ============================================================ */
 const CSV_FALLBACK = {
   devices: `id,label,icon_key,status,power_w,voltage_v,current_a,trend_scale
@@ -539,6 +609,13 @@ async function loadCSV(name, path){
   }
 }
 
+const ICONS = {
+  floor: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="15" y="35" width="70" height="55" stroke="#c8ff4d" stroke-width="1.5"/><polygon points="10,38 50,10 90,38" stroke="#c8ff4d" stroke-width="1.5" fill="none"/><rect x="45" y="60" width="14" height="25" fill="#c8ff4d" opacity="0.45"/><rect x="25" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/><rect x="61" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/></svg>`,
+  meter: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="20" y="15" width="60" height="70" stroke="#c8ff4d" stroke-width="1.5"/><circle cx="50" cy="45" r="16" stroke="#c8ff4d" stroke-width="1.5"/><line x1="50" y1="45" x2="58" y2="34" stroke="#c8ff4d" stroke-width="1.5"/><line x1="35" y1="70" x2="65" y2="70" stroke="#c8ff4d" stroke-width="1.5"/></svg>`,
+  panel: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="22" y="10" width="56" height="80" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="25" x2="70" y2="25" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="40" x2="70" y2="40" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="55" x2="70" y2="55" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="70" x2="70" y2="70" stroke="#c8ff4d" stroke-width="1.5"/></svg>`,
+  solar: `<svg width="240" height="240" viewBox="0 0 100 100" fill="none"><polygon points="15,35 70,20 85,35 30,50" stroke="#c8ff4d" stroke-width="1.5"/><line x1="15" y1="35" x2="30" y2="50" stroke="#c8ff4d" stroke-width="1"/><line x1="70" y1="20" x2="85" y2="35" stroke="#c8ff4d" stroke-width="1"/><rect x="20" y="65" width="55" height="20" stroke="#c8ff4d" stroke-width="1.5"/><line x1="33" y1="65" x2="33" y2="85" stroke="#c8ff4d" stroke-width="1"/><line x1="46" y1="65" x2="46" y2="85" stroke="#c8ff4d" stroke-width="1"/><line x1="59" y1="65" x2="59" y2="85" stroke="#c8ff4d" stroke-width="1"/></svg>`
+};
+
 let charts = {};
 function killChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
 
@@ -608,6 +685,53 @@ async function initHome(){
   });
 }
 
+async function initDetail(route){
+  const devices = await loadCSV('devices','./data/devices.csv');
+  const d = devices.find(x=>x.id===route);
+  if(!d) return;
+  document.getElementById('detailEyebrow').textContent = 'DEVICE / ' + route.toUpperCase();
+  document.getElementById('detailTitle').textContent = d.label;
+  const badge = document.getElementById('detailBadge');
+  badge.textContent = d.status;
+  badge.className = 'badge ' + (d.status==='ON' ? 'badge-on':'badge-off');
+  document.getElementById('detailPower').textContent = d.power_w + 'W';
+  document.getElementById('detailVoltage').textContent = d.voltage_v + 'V';
+  document.getElementById('detailCurrent').textContent = d.current_a + 'A';
+  document.getElementById('detailIcon').innerHTML = ICONS[d.icon_key] || '';
+
+  const trend = await loadCSV('load','./data/load_profile.csv');
+  const scaled = trend.map(r=> +(r.total_kw * d.trend_scale).toFixed(2));
+  killChart('detailChart');
+  charts.detailChart = new Chart(document.getElementById('detailChart'), {
+    type:'line',
+    data:{labels:trend.map(r=>r.hour), datasets:[{data:scaled, borderColor:'#c8ff4d', backgroundColor:'rgba(200,255,77,0.06)', fill:true, tension:0.3, pointRadius:0, borderWidth:1.5}]},
+    options: chartBase
+  });
+}
+
+const ROUTE_LABELS = {
+  home:'HOME', floor1:'1F 設施', floor2:'2F 設施', floor3:'3F 設施',
+  meter:'電錶總覽', panel:'配電盤總覽', solar:'太陽能與儲能'
+};
+
+function navigate(route){
+  document.getElementById('crumbText').innerHTML = route==='home'
+    ? '主頁 / HOME' : `主頁 <span style="opacity:.4">/</span> <b>${ROUTE_LABELS[route]}</b>`;
+
+  if(route==='home'){
+    document.getElementById('home-view').style.display='block';
+    document.getElementById('detail-view').classList.remove('active');
+  } else {
+    document.getElementById('home-view').style.display='none';
+    document.getElementById('detail-view').classList.add('active');
+    initDetail(route);
+  }
+  window.scrollTo({top:0, behavior:'instant'});
+  history.replaceState(null,'','#'+route);
+  setupReveal();
+}
+
+/* scroll reveal */
 function setupReveal(){
   const els = document.querySelectorAll('.reveal:not(.observed)');
   const io = new IntersectionObserver((entries)=>{
@@ -616,6 +740,7 @@ function setupReveal(){
   els.forEach(el=>{ el.classList.add('observed'); io.observe(el); });
 }
 
+/* nav scroll state */
 window.addEventListener('scroll', ()=>{
   document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 40);
 });
@@ -623,7 +748,17 @@ window.addEventListener('scroll', ()=>{
 (function boot(){
   initHome();
   setupReveal();
+  const start = location.hash ? location.hash.slice(1) : 'home';
+  navigate(ROUTE_LABELS[start] ? start : 'home');
 })();
 </script>
 </body>
 </html>
+
+
+
+
+
+
+
+

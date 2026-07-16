@@ -110,6 +110,85 @@ def run_basecontrol_simulation():
         # 5. 執行這 15 分鐘的物理計算 (Solve)
         dss.Text.Command("Solve")
 
+        # ==========================================
+        # 🌟 新增：抓取 1F 16 個設備的真實物理狀態，並輸出給網頁前端
+        # ==========================================
+        # 根據 hems_circuit.py 定義的 1F 負載名稱對應表
+        floor1_loads = [
+            {"id": "f1_dev_1",  "name": "1F 照明 1(EP)", "dss_name": "Load.ep_1f_lighting1_an"},
+            {"id": "f1_dev_2",  "name": "1F 照明 2(EP)", "dss_name": "Load.ep_1f_lighting2_bn"},
+            {"id": "f1_dev_3",  "name": "1F WiFi/插座(EP)", "dss_name": "Load.ep_1f_wifi_an"},
+            {"id": "f1_dev_4",  "name": "1F 電熱水器(EP)", "dss_name": "Load.ep_1f_waterheater_bn"},
+            {"id": "f1_dev_5",  "name": "1F 冰箱(EP)", "dss_name": "Load.ep_fridge_an"},
+            {"id": "f1_dev_6",  "name": "1F 廚房專插(EP)", "dss_name": "Load.ep_kitchen_bn"},
+            {"id": "f1_dev_7",  "name": "1F 照明 1(L1)", "dss_name": "Load.l1_lighting1_an"},
+            {"id": "f1_dev_8",  "name": "1F 照明 2(L1)", "dss_name": "Load.l1_lighting2_bn"},
+            {"id": "f1_dev_9",  "name": "1F 插座 1(L1)", "dss_name": "Load.l1_socket1_an"},
+            {"id": "f1_dev_10", "name": "1F 插座 2(L1)", "dss_name": "Load.l1_socket2_bn"},
+            {"id": "f1_dev_11", "name": "1F 插座 3(L1)", "dss_name": "Load.l1_socket3_an"},
+            {"id": "f1_dev_12", "name": "1F 插座 4(L1)", "dss_name": "Load.l1_socket4_bn"},
+            {"id": "f1_dev_13", "name": "1F 插座 5(L1)", "dss_name": "Load.l1_socket5_an"},
+            {"id": "f1_dev_14", "name": "1F 插座 6(L1)", "dss_name": "Load.l1_socket6_bn"},
+            {"id": "f1_dev_15", "name": "1F 電磁爐(L1)", "dss_name": "Load.l1_inductioncooktop_abn"},
+            {"id": "f1_dev_16", "name": "1F 冷氣(L1)", "dss_name": "Load.l1_airc_abn"}
+        ]
+
+        f1_device_data = []
+        for dev in floor1_loads:
+            # 將 OpenDSS 內部游標指向該設備
+            dss.Circuit.SetActiveElement(dev["dss_name"])
+            
+            # 抓取功率與電流
+            # 抓取功率與電流
+            # 改用 TotalPowers() 自動加總所有跨接導線的功率
+            total_powers = dss.CktElement.TotalPowers()
+            kw = abs(total_powers[0]) if total_powers else 0.0
+            watts = kw * 1000.0
+
+            currents = dss.CktElement.CurrentsMagAng()
+            amps = currents[0] if currents else 0.0
+            status_code = 1 if watts > 1.0 else 0
+
+            # ==========================================
+            # 1. 取得「額定電壓」 (從設定中讀取)
+            # ==========================================
+            rated_kv = float(dss.Properties.Value("kV"))
+            rated_v = rated_kv * 1000.0  # 會得到 110.0 或 220.0
+
+            # ==========================================
+            # 2. 計算「真實電壓」 (利用您的 P / I 邏輯)
+            # ==========================================
+            if status_code == 1 and amps > 0:
+                # 設備啟動時：用 功率 / 電流 反推最真實的跨壓
+                real_v = watts / amps
+            else:
+                # 設備停機時：因為電流為 0 無法 P/I，我們直接抓取節點的物理電壓
+                voltages = dss.CktElement.VoltagesMagAng()
+                if rated_v >= 200 and len(voltages) >= 3:
+                    # 220V 設備跨接 L1 與 L2，真實電壓為兩端對地電壓相加
+                    real_v = voltages[0] + voltages[2]
+                else:
+                    # 110V 設備，直接取第一項電壓
+                    real_v = voltages[0] if len(voltages) >= 1 else rated_v
+
+            # 組合出前端需要的格式 (現在有 rated_v 跟 real_v 兩個獨立欄位了)
+            f1_device_data.append({
+                "id": dev["id"],
+                "name": dev["name"],
+                "status_code": status_code,
+                "power_w": round(watts, 1),
+                "rated_v": int(rated_v),       # 額定電壓 (整數)
+                "real_v": round(real_v, 1),    # 真實電壓 (小數點後 1 位)
+                "current_a": round(amps, 2)
+            })
+
+        # 將 16 個設備的即時數據存為 CSV，供 01_floor1.html 讀取
+        # 由於這個在迴圈內，它會不斷覆寫，最終會保留模擬結束最後一刻的狀態。
+        # 未來如果搭配 API 伺服器，前端每次按重新整理，讀到的就會是最即時的數值。
+        df_f1_devices = pd.DataFrame(f1_device_data)
+        df_f1_devices.to_csv(r"C:\projects\hems-simulation-web\results\data\floor1_devices.csv", index=False, encoding='utf-8-sig')
+
+
 
         #執行異常檢測
         current_violations = check_system_violations(time_str)

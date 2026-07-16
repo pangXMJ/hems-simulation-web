@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HEMS — 電錶總覽</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#050506;
+  --bg-2:#0a0a0b;
+  --panel:#0f0f11;
+  --card:#121214;
+  --line:rgba(255,255,255,0.09);
+  --line-soft:rgba(255,255,255,0.05);
+  --white:#f3f2ee;
+  --dim:#8a8a90;
+  --faint:#4d4d52;
+  --accent:#c8ff4d;
+  --accent-dim:rgba(200,255,77,0.10);
+  --accent-line:rgba(200,255,77,0.35);
+  --off:#ff5a5a;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--white);
+  font-family:'Inter','Noto Sans TC',sans-serif;
+  font-weight:400;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.display{font-family:'Bebas Neue','Noto Sans TC',sans-serif; letter-spacing:0.5px;}
+.mono{font-family:'Space Mono',monospace;}
+.tc{font-family:'Noto Sans TC',sans-serif;}
+a{color:inherit;}
+::selection{background:var(--accent); color:#050506;}
+
+/* ---------- nav ---------- */
+.topbar{
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:26px 5vw;
+  transition:all .4s ease;
+  border-bottom:1px solid transparent;
+}
+.topbar.scrolled{
+  background:rgba(5,5,6,0.82);
+  backdrop-filter:blur(14px);
+  padding:16px 5vw;
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:center; gap:11px; cursor:pointer;}
+.brand .ring{
+  width:22px; height:22px; border-radius:50%;
+  border:2px solid var(--accent);
+  position:relative;
+}
+.brand .ring::after{content:'';position:absolute; inset:5px; border-radius:50%; background:var(--accent); opacity:.9;}
+.brand span{font-family:'Bebas Neue'; font-size:20px; letter-spacing:2px;}
+.nav-right{display:flex; align-items:center; gap:34px;}
+.crumb{color:var(--dim); font-size:11px; letter-spacing:1.5px; text-transform:uppercase; font-family:'Space Mono',monospace;}
+.crumb b{color:var(--accent); font-weight:400;}
+
+/* ---------- section shell ---------- */
+.section{max-width:1360px; margin:0 auto; padding:150px 5vw;}
+.section.tight{padding-top:80px;}
+
+.card{background:var(--card); border:1px solid var(--line); border-radius:2px; padding:30px;}
+.grid-2{display:grid; grid-template-columns:1.35fr 1fr; gap:1px; background:var(--line);}
+.grid-2 > .card{border-radius:0; border:none;}
+@media(max-width:900px){.grid-2{grid-template-columns:1fr;}}
+
+.spec-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin-bottom:8px;}
+canvas{max-width:100%;}
+.chart-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin:0 0 18px;}
+
+.badge{font-family:'Space Mono'; font-size:11px; letter-spacing:1px; padding:5px 12px; border:1px solid; text-transform:uppercase;}
+.badge-on{color:var(--accent); border-color:var(--accent-line); background:var(--accent-dim);}
+.badge-off{color:var(--off); border-color:rgba(255,90,90,0.35); background:rgba(255,90,90,0.08);}
+
+/* buttons */
+.btn-line{
+  all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:10px;
+  font-family:'Space Mono'; font-size:11.5px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--dim); padding-bottom:6px; border-bottom:1px solid var(--line);
+  transition:.25s;
+}
+.btn-line:hover{color:var(--white); border-color:var(--accent);}
+.btn-line:hover .arrow{transform:translateX(4px);}
+.arrow{transition:.25s; display:inline-block;}
+
+/* ---------- detail pages ---------- */
+.detail-page{display:block;} /* 確保獨立頁面直接顯示 */
+.detail-hero{
+  min-height:56vh; display:flex; align-items:center; padding:120px 5vw 60px;
+  background:radial-gradient(ellipse 70% 70% at 70% 40%, rgba(200,255,77,0.05), transparent 70%);
+  border-bottom:1px solid var(--line);
+}
+.detail-hero-inner{display:grid; grid-template-columns:1fr 1.4fr; gap:60px; align-items:center; width:100%; max-width:1360px; margin:0 auto;}
+.detail-icon{display:flex; align-items:center; justify-content:center;}
+.detail-title-block .spec-label{margin-bottom:16px;}
+.detail-title-block h1{font-family:'Bebas Neue'; font-size:clamp(48px,7vw,110px); margin:0; line-height:0.9;}
+@media(max-width:900px){.detail-hero-inner{grid-template-columns:1fr;}}
+
+.spec-sheet{border-top:1px solid var(--line);}
+.spec-sheet-row{
+  display:flex; align-items:baseline; justify-content:space-between;
+  padding:22px 0; border-bottom:1px solid var(--line-soft);
+}
+.spec-sheet-row .k{font-family:'Space Mono'; font-size:11px; letter-spacing:2px; color:var(--faint); text-transform:uppercase;}
+.spec-sheet-row .v{font-family:'Space Mono'; font-size:22px; font-weight:700;}
+
+footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); font-size:11.5px; text-align:center; font-family:'Space Mono';}
+footer a{color:var(--accent); text-decoration:none;}
+</style>
+</head>
+<body>
+
+<div class="topbar" id="topbar">
+  <div class="brand" onclick="window.location.href='index.html'">
+    <div class="ring"></div>
+    <span>HEMS</span>
+  </div>
+  <div class="nav-right">
+    <!-- 麵包屑在這裡！如果是其他檔案，請修改下面的 <b>電錶總覽</b> -->
+    <div class="crumb">主頁 <span style="opacity:.4">/</span> <b>配電盤總覽</b></div>
+  </div>
+</div>
+
+<!-- ============ DETAIL PAGE ============ -->
+<div id="detail-view" class="detail-page active">
+  <section class="detail-hero">
+    <div class="detail-hero-inner">
+      <div class="detail-icon" id="detailIcon"></div>
+      <div class="detail-title-block">
+        <button class="btn-line" onclick="window.location.href='index.html'"><span class="arrow">←</span> BACK TO HOME</button>
+        <div class="spec-label" style="margin-top:26px;" id="detailEyebrow">DEVICE</div>
+        <h1 id="detailTitle">--</h1>
+        <div style="margin-top:20px;"><span class="badge" id="detailBadge">--</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section tight">
+    <div class="grid-2">
+      <div class="card">
+        <div class="spec-sheet">
+          <div class="spec-sheet-row"><span class="k">功率 POWER</span><span class="v" id="detailPower">--</span></div>
+          <div class="spec-sheet-row"><span class="k">電壓 VOLTAGE</span><span class="v" id="detailVoltage">--</span></div>
+          <div class="spec-sheet-row"><span class="k">電流 CURRENT</span><span class="v" id="detailCurrent">--</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <p class="chart-label">24H POWER TREND (kW)</p>
+        <canvas id="detailChart" height="190"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  HEMS PROTOTYPE — DATA SOURCED FROM <a href="#">/data/*.csv</a> — FOR ACADEMIC PROJECT PREVIEW ONLY
+</footer>
+
+<script>
+/* ============================================================
+   資料層：CSV 讀取
+   ============================================================ */
+const CSV_FALLBACK = {
+  devices: `id,label,icon_key,status,power_w,voltage_v,current_a,trend_scale
+floor1,1F設備總覽,floor,ON,110,110,1.0,1.0
+floor2,2F設備總覽,floor,ON,85,110,0.8,0.78
+floor3,3F設備總覽,floor,OFF,400,110,3.6,2.4
+meter,電錶總覽,meter,ON,3200,220,14.5,18.5
+panel,配電盤總覽,panel,ON,5000,220,22.7,26.0
+solar,太陽能及儲能系統,solar,ON,110,110,1.0,1.0`,
+  load: `hour,total_kw
+00:00,0.3
+01:00,0.2
+02:00,0.2
+03:00,0.2
+04:00,0.2
+05:00,0.3
+06:00,0.6
+07:00,4.2
+08:00,0.9
+09:00,0.5
+10:00,0.4
+11:00,4.4
+12:00,0.6
+13:00,0.5
+14:00,0.6
+15:00,0.7
+16:00,1.4
+17:00,1.9
+18:00,4.8
+19:00,4.3
+20:00,3.6
+21:00,1.8
+22:00,0.8
+23:00,0.4`
+};
+
+async function loadCSV(name, path){
+  try{
+    const res = await fetch(path);
+    if(!res.ok) throw new Error('no file');
+    const text = await res.text();
+    return Papa.parse(text.trim(), {header:true, dynamicTyping:true}).data;
+  }catch(e){
+    return Papa.parse(CSV_FALLBACK[name].trim(), {header:true, dynamicTyping:true}).data;
+  }
+}
+
+const ICONS = {
+  floor: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="15" y="35" width="70" height="55" stroke="#c8ff4d" stroke-width="1.5"/><polygon points="10,38 50,10 90,38" stroke="#c8ff4d" stroke-width="1.5" fill="none"/><rect x="45" y="60" width="14" height="25" fill="#c8ff4d" opacity="0.45"/><rect x="25" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/><rect x="61" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/></svg>`,
+  meter: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="20" y="15" width="60" height="70" stroke="#c8ff4d" stroke-width="1.5"/><circle cx="50" cy="45" r="16" stroke="#c8ff4d" stroke-width="1.5"/><line x1="50" y1="45" x2="58" y2="34" stroke="#c8ff4d" stroke-width="1.5"/><line x1="35" y1="70" x2="65" y2="70" stroke="#c8ff4d" stroke-width="1.5"/></svg>`,
+  panel: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="22" y="10" width="56" height="80" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="25" x2="70" y2="25" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="40" x2="70" y2="40" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="55" x2="70" y2="55" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="70" x2="70" y2="70" stroke="#c8ff4d" stroke-width="1.5"/></svg>`,
+  solar: `<svg width="240" height="240" viewBox="0 0 100 100" fill="none"><polygon points="15,35 70,20 85,35 30,50" stroke="#c8ff4d" stroke-width="1.5"/><line x1="15" y1="35" x2="30" y2="50" stroke="#c8ff4d" stroke-width="1"/><line x1="70" y1="20" x2="85" y2="35" stroke="#c8ff4d" stroke-width="1"/><rect x="20" y="65" width="55" height="20" stroke="#c8ff4d" stroke-width="1.5"/><line x1="33" y1="65" x2="33" y2="85" stroke="#c8ff4d" stroke-width="1"/><line x1="46" y1="65" x2="46" y2="85" stroke="#c8ff4d" stroke-width="1"/><line x1="59" y1="65" x2="59" y2="85" stroke="#c8ff4d" stroke-width="1"/></svg>`
+};
+
+let charts = {};
+function killChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+
+const chartBase = {
+  responsive:true,
+  plugins:{legend:{display:false}},
+  scales:{
+    x:{ticks:{color:'#5a5a60', font:{family:'Space Mono', size:9}}, grid:{color:'rgba(255,255,255,0.05)'}},
+    y:{ticks:{color:'#5a5a60', font:{family:'Space Mono', size:9}}, grid:{color:'rgba(255,255,255,0.05)'}}
+  }
+};
+
+async function initDetail(route){
+  const devices = await loadCSV('devices','./data/devices.csv');
+  const d = devices.find(x=>x.id===route);
+  if(!d) return;
+  document.getElementById('detailEyebrow').textContent = 'DEVICE / ' + route.toUpperCase();
+  document.getElementById('detailTitle').textContent = d.label;
+  const badge = document.getElementById('detailBadge');
+  badge.textContent = d.status;
+  badge.className = 'badge ' + (d.status==='ON' ? 'badge-on':'badge-off');
+  document.getElementById('detailPower').textContent = d.power_w + 'W';
+  document.getElementById('detailVoltage').textContent = d.voltage_v + 'V';
+  document.getElementById('detailCurrent').textContent = d.current_a + 'A';
+  document.getElementById('detailIcon').innerHTML = ICONS[d.icon_key] || '';
+
+  const trend = await loadCSV('load','./data/load_profile.csv');
+  const scaled = trend.map(r=> +(r.total_kw * d.trend_scale).toFixed(2));
+  killChart('detailChart');
+  charts.detailChart = new Chart(document.getElementById('detailChart'), {
+    type:'line',
+    data:{labels:trend.map(r=>r.hour), datasets:[{data:scaled, borderColor:'#c8ff4d', backgroundColor:'rgba(200,255,77,0.06)', fill:true, tension:0.3, pointRadius:0, borderWidth:1.5}]},
+    options: chartBase
+  });
+}
+
+window.addEventListener('scroll', ()=>{
+  document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 40);
+});
+
+(function boot(){
+  // 這裡決定要載入哪一個設備的資料，05電錶對應的是 'meter'
+  // 如果是其他檔案，請修改這裡的字串，例如 'floor1', 'solar', 'panel'
+  initDetail('panel');
+})();
+</script>
+</body>
+</html>
