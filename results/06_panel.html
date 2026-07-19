@@ -3,273 +3,305 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HEMS — 電錶總覽</title>
+<title>HEMS — 06 配電盤總覽</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
+/* ==========================================
+   核心設計變數
+   ========================================== */
 :root{
-  --bg:#050506;
-  --bg-2:#0a0a0b;
-  --panel:#0f0f11;
-  --card:#121214;
-  --line:rgba(255,255,255,0.09);
-  --line-soft:rgba(255,255,255,0.05);
-  --white:#f3f2ee;
-  --dim:#8a8a90;
-  --faint:#4d4d52;
-  --accent:#c8ff4d;
-  --accent-dim:rgba(200,255,77,0.10);
-  --accent-line:rgba(200,255,77,0.35);
-  --off:#ff5a5a;
+  --bg:#050506; --card:#121214; 
+  --line:rgba(255,255,255,0.09); --line-soft:rgba(255,255,255,0.05);
+  --white:#f3f2ee; --dim:#8a8a90; --faint:#4d4d52; 
+  --accent:#c8ff4d; --accent-dim:rgba(200,255,77,0.10); 
+  --grid-color: #4deeea; /* 市電顏色 (青色) */
+  --batt-color: #ffea4d; /* 電池顏色 (黃色) */
+  --ep-color: #ff9e4d;   /* EP 主匯流排 (橘色) */
+  --load-color: #b74dff; /* 負載 (紫色) */
 }
 *{box-sizing:border-box;}
-html{scroll-behavior:smooth;}
-body{
-  margin:0;
-  background:var(--bg);
-  color:var(--white);
-  font-family:'Inter','Noto Sans TC',sans-serif;
-  font-weight:400;
-  -webkit-font-smoothing:antialiased;
-  overflow-x:hidden;
-}
-.display{font-family:'Bebas Neue','Noto Sans TC',sans-serif; letter-spacing:0.5px;}
-.mono{font-family:'Space Mono',monospace;}
-.tc{font-family:'Noto Sans TC',sans-serif;}
-a{color:inherit;}
-::selection{background:var(--accent); color:#050506;}
+body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','Noto Sans TC',sans-serif; overflow-x:hidden; }
 
-/* ---------- nav ---------- */
-.topbar{
-  position:fixed; top:0; left:0; right:0; z-index:100;
-  display:flex; align-items:center; justify-content:space-between;
-  padding:26px 5vw;
-  transition:all .4s ease;
-  border-bottom:1px solid transparent;
-}
-.topbar.scrolled{
-  background:rgba(5,5,6,0.82);
-  backdrop-filter:blur(14px);
-  padding:16px 5vw;
-  border-bottom:1px solid var(--line);
-}
+/* 導覽列 */
+.topbar{ position:fixed; top:0; left:0; right:0; z-index:100; display:flex; align-items:center; justify-content:space-between; padding:26px 5vw; backdrop-filter:blur(14px); border-bottom:1px solid var(--line); }
 .brand{display:flex; align-items:center; gap:11px; cursor:pointer;}
-.brand .ring{
-  width:22px; height:22px; border-radius:50%;
-  border:2px solid var(--accent);
-  position:relative;
-}
-.brand .ring::after{content:'';position:absolute; inset:5px; border-radius:50%; background:var(--accent); opacity:.9;}
+.brand .ring{ width:22px; height:22px; border-radius:50%; border:2px solid var(--accent); position:relative; }
 .brand span{font-family:'Bebas Neue'; font-size:20px; letter-spacing:2px;}
 .nav-right{display:flex; align-items:center; gap:34px;}
 .crumb{color:var(--dim); font-size:11px; letter-spacing:1.5px; text-transform:uppercase; font-family:'Space Mono',monospace;}
 .crumb b{color:var(--accent); font-weight:400;}
 
-/* ---------- section shell ---------- */
-.section{max-width:1360px; margin:0 auto; padding:150px 5vw;}
-.section.tight{padding-top:80px;}
+.section{max-width:1360px; margin:0 auto; padding:120px 5vw 60px;}
 
-.card{background:var(--card); border:1px solid var(--line); border-radius:2px; padding:30px;}
-.grid-2{display:grid; grid-template-columns:1.35fr 1fr; gap:1px; background:var(--line);}
-.grid-2 > .card{border-radius:0; border:none;}
-@media(max-width:900px){.grid-2{grid-template-columns:1fr;}}
+/* ==========================================
+   上半部：動態單線圖與電力潮流
+   ========================================== */
+.sld-card{ background:var(--card); border:1px solid var(--line); border-radius:4px; padding:30px; margin-bottom:24px; position:relative; overflow:hidden;}
+.sld-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--line-soft); padding-bottom:15px; }
+.sld-title{ font-family:'Space Mono'; font-size:14px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; }
 
-.spec-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin-bottom:8px;}
-canvas{max-width:100%;}
-.chart-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin:0 0 18px;}
+/* 供電來源指示器 */
+.power-source-badge{ display:flex; align-items:center; gap:12px; font-family:'Bebas Neue'; font-size:24px; letter-spacing:2px; padding:8px 16px; border:1px solid; border-radius:2px; }
+.source-grid{ color:var(--grid-color); border-color:var(--grid-color); background:rgba(77,238,234,0.1); }
+.source-batt{ color:var(--batt-color); border-color:var(--batt-color); background:rgba(255,234,77,0.1); }
 
-.badge{font-family:'Space Mono'; font-size:11px; letter-spacing:1px; padding:5px 12px; border:1px solid; text-transform:uppercase;}
-.badge-on{color:var(--accent); border-color:var(--accent-line); background:var(--accent-dim);}
-.badge-off{color:var(--off); border-color:rgba(255,90,90,0.35); background:rgba(255,90,90,0.08);}
-
-/* buttons */
-.btn-line{
-  all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:10px;
-  font-family:'Space Mono'; font-size:11.5px; letter-spacing:2px; text-transform:uppercase;
-  color:var(--dim); padding-bottom:6px; border-bottom:1px solid var(--line);
-  transition:.25s;
+/* SVG 動態線條設定 */
+.svg-container{ width:100%; height:300px; display:flex; justify-content:center; align-items:center; }
+.node-box{ fill: var(--card); stroke: var(--faint); stroke-width: 2; }
+.node-text{ fill: var(--white); font-family: 'Space Mono', monospace; font-size: 16px; font-weight: bold; text-anchor: middle; dominant-baseline: middle; }
+.flow-line{ fill: none; stroke: var(--faint); stroke-width: 4; stroke-linejoin: round; }
+.flow-active{ 
+  stroke: var(--accent); /* 預設動態顏色，可由 JS 更改為市電或電池顏色 */
+  stroke-dasharray: 12 12; 
+  animation: marching-ants 1s linear infinite; 
 }
-.btn-line:hover{color:var(--white); border-color:var(--accent);}
-.btn-line:hover .arrow{transform:translateX(4px);}
-.arrow{transition:.25s; display:inline-block;}
+@keyframes marching-ants { to { stroke-dashoffset: -24; } }
 
-/* ---------- detail pages ---------- */
-.detail-page{display:block;} /* 確保獨立頁面直接顯示 */
-.detail-hero{
-  min-height:56vh; display:flex; align-items:center; padding:120px 5vw 60px;
-  background:radial-gradient(ellipse 70% 70% at 70% 40%, rgba(200,255,77,0.05), transparent 70%);
-  border-bottom:1px solid var(--line);
-}
-.detail-hero-inner{display:grid; grid-template-columns:1fr 1.4fr; gap:60px; align-items:center; width:100%; max-width:1360px; margin:0 auto;}
-.detail-icon{display:flex; align-items:center; justify-content:center;}
-.detail-title-block .spec-label{margin-bottom:16px;}
-.detail-title-block h1{font-family:'Bebas Neue'; font-size:clamp(48px,7vw,110px); margin:0; line-height:0.9;}
-@media(max-width:900px){.detail-hero-inner{grid-template-columns:1fr;}}
+/* ==========================================
+   下半部：四節點數據矩陣 (L1/L2 雙相電壓電流)
+   ========================================== */
+.matrix-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media(max-width:900px){ .matrix-grid{ grid-template-columns: 1fr; } }
 
-.spec-sheet{border-top:1px solid var(--line);}
-.spec-sheet-row{
-  display:flex; align-items:baseline; justify-content:space-between;
-  padding:22px 0; border-bottom:1px solid var(--line-soft);
-}
-.spec-sheet-row .k{font-family:'Space Mono'; font-size:11px; letter-spacing:2px; color:var(--faint); text-transform:uppercase;}
-.spec-sheet-row .v{font-family:'Space Mono'; font-size:22px; font-weight:700;}
+.panel-card{ background: var(--card); border: 1px solid var(--line); padding: 25px; position: relative; }
+.panel-card::before{ content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--faint); }
+.panel-card.ep::before{ background:var(--ep-color); }
+.panel-card.load::before{ background:var(--load-color); }
 
-footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); font-size:11.5px; text-align:center; font-family:'Space Mono';}
-footer a{color:var(--accent); text-decoration:none;}
+.panel-title{ font-family: 'Bebas Neue'; font-size: 32px; letter-spacing: 2px; margin:0 0 16px 0; display:flex; align-items:center; justify-content:space-between;}
+.status-dot{ width:10px; height:10px; border-radius:50%; background:var(--accent); box-shadow:0 0 10px var(--accent); }
+
+/* 2x2 數據區塊 */
+.data-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.phase-group{ background: rgba(255,255,255,0.02); border: 1px solid var(--line-soft); padding: 16px; border-radius: 4px; }
+.phase-title{ font-family: 'Noto Sans TC'; font-size: 12px; color: var(--faint); margin-bottom: 12px; font-weight:bold; letter-spacing:1px; border-bottom:1px solid var(--line-soft); padding-bottom:6px;}
+.data-row{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+.data-row:last-child{ margin-bottom:0; }
+.data-label{ font-family: 'Space Mono'; font-size: 11px; color: var(--dim); }
+.data-value{ font-family: 'Bebas Neue'; font-size: 24px; color: var(--white); }
+.data-unit{ font-size: 12px; color: var(--dim); font-family: 'Space Mono'; }
+
 </style>
 </head>
 <body>
 
-<div class="topbar" id="topbar">
+<div class="topbar">
   <div class="brand" onclick="window.location.href='index.html'">
-    <div class="ring"></div>
-    <span>HEMS</span>
+    <div class="ring"></div><span>HEMS</span>
   </div>
   <div class="nav-right">
-    <!-- 麵包屑在這裡！如果是其他檔案，請修改下面的 <b>電錶總覽</b> -->
-    <div class="crumb">主頁 <span style="opacity:.4">/</span> <b>配電盤總覽</b></div>
+    <div id="sysTime" style="color: var(--accent); font-family: 'Space Mono', monospace; font-size: 14px;">TIME: 00:00</div>
+    <div class="crumb">主頁 <span style="opacity:.4">/</span> <b>06 配電盤</b></div>
   </div>
 </div>
 
-<!-- ============ DETAIL PAGE ============ -->
-<div id="detail-view" class="detail-page active">
-  <section class="detail-hero">
-    <div class="detail-hero-inner">
-      <div class="detail-icon" id="detailIcon"></div>
-      <div class="detail-title-block">
-        <button class="btn-line" onclick="window.location.href='index.html'"><span class="arrow">←</span> BACK TO HOME</button>
-        <div class="spec-label" style="margin-top:26px;" id="detailEyebrow">DEVICE</div>
-        <h1 id="detailTitle">--</h1>
-        <div style="margin-top:20px;"><span class="badge" id="detailBadge">--</span></div>
+<div class="section">
+  
+  <!-- ================= 動態電力潮流圖 ================= -->
+  <div class="sld-card">
+    <div class="sld-header">
+      <div class="sld-title">POWER FLOW TOPOLOGY</div>
+      <!-- 目前供電來源指示器 (JS 控制切換 class: source-grid 或 source-batt) -->
+      <div id="powerSourceBadge" class="power-source-badge source-grid">
+        <span style="font-size:18px; margin-right:8px;">⚡</span> GRID POWER (市電供電)
       </div>
     </div>
-  </section>
 
-  <div class="section tight">
-    <div class="grid-2">
-      <div class="card">
-        <div class="spec-sheet">
-          <div class="spec-sheet-row"><span class="k">功率 POWER</span><span class="v" id="detailPower">--</span></div>
-          <div class="spec-sheet-row"><span class="k">電壓 VOLTAGE</span><span class="v" id="detailVoltage">--</span></div>
-          <div class="spec-sheet-row"><span class="k">電流 CURRENT</span><span class="v" id="detailCurrent">--</span></div>
+    <div class="svg-container">
+      <svg viewBox="0 0 800 200" width="100%" height="100%">
+        <!-- 基礎靜態線條 (底線) -->
+        <polyline points="150,100 300,100" class="flow-line" />
+        <polyline points="380,100 500,100" class="flow-line" />
+        <polyline points="500,40 500,160" class="flow-line" />
+        <polyline points="500,40 600,40" class="flow-line" />
+        <polyline points="500,100 600,100" class="flow-line" />
+        <polyline points="500,160 600,160" class="flow-line" />
+
+        <!-- 動態電流線條 (覆蓋在上面，使用 flow-active 產生流動感) -->
+        <polyline id="flow-main" points="150,100 300,100" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        <polyline id="flow-ep-split" points="380,100 500,100" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        <polyline id="flow-l1" points="500,100 500,40 600,40" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        <polyline id="flow-l2" points="500,100 600,100" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        <polyline id="flow-l3" points="500,100 500,160 600,160" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+
+        <!-- 節點方塊 (Source) -->
+        <rect x="50" y="70" width="100" height="60" rx="4" class="node-box" stroke="var(--grid-color)" stroke-width="2"/>
+        <text x="100" y="100" class="node-text" id="svg-source-text" style="fill:var(--grid-color)">GRID</text>
+
+        <!-- 節點方塊 (EP) -->
+        <rect x="300" y="70" width="80" height="60" rx="4" class="node-box" stroke="var(--ep-color)"/>
+        <text x="340" y="100" class="node-text" style="fill:var(--ep-color)">EP</text>
+
+        <!-- 節點方塊 (L1, L2, L3) -->
+        <rect x="600" y="20" width="80" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
+        <text x="640" y="40" class="node-text" style="fill:var(--load-color)">L1</text>
+        
+        <rect x="600" y="80" width="80" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
+        <text x="640" y="100" class="node-text" style="fill:var(--load-color)">L2</text>
+        
+        <rect x="600" y="140" width="80" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
+        <text x="640" y="160" class="node-text" style="fill:var(--load-color)">L3</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- ================= 四節點數據矩陣 (L1/L2 相位) ================= -->
+  <div class="matrix-grid">
+    
+    <!-- EP 主匯流排 -->
+    <div class="panel-card ep">
+      <h2 class="panel-title" style="color:var(--ep-color);">NODE: EP <div class="status-dot"></div></h2>
+      <div class="data-grid">
+        <div class="phase-group">
+          <div class="phase-title">LINE 1 (L1)</div>
+          <div class="data-row">
+            <span class="data-label">VOLTAGE</span>
+            <span class="data-value" id="ep-v-l1">-- <span class="data-unit">V</span></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CURRENT</span>
+            <span class="data-value" id="ep-a-l1">-- <span class="data-unit">A</span></span>
+          </div>
+        </div>
+        <div class="phase-group">
+          <div class="phase-title">LINE 2 (L2)</div>
+          <div class="data-row">
+            <span class="data-label">VOLTAGE</span>
+            <span class="data-value" id="ep-v-l2">-- <span class="data-unit">V</span></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CURRENT</span>
+            <span class="data-value" id="ep-a-l2">-- <span class="data-unit">A</span></span>
+          </div>
         </div>
       </div>
-      <div class="card">
-        <p class="chart-label">24H POWER TREND (kW)</p>
-        <canvas id="detailChart" height="190"></canvas>
+    </div>
+
+    <!-- L1 負載 -->
+    <div class="panel-card load">
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L1 <div class="status-dot"></div></h2>
+      <div class="data-grid">
+        <div class="phase-group">
+          <div class="phase-title">LINE 1 (L1)</div>
+          <div class="data-row">
+            <span class="data-label">VOLTAGE</span>
+            <span class="data-value" id="l1-v-l1">-- <span class="data-unit">V</span></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CURRENT</span>
+            <span class="data-value" id="l1-a-l1">-- <span class="data-unit">A</span></span>
+          </div>
+        </div>
+        <div class="phase-group">
+          <div class="phase-title">LINE 2 (L2)</div>
+          <div class="data-row">
+            <span class="data-label">VOLTAGE</span>
+            <span class="data-value" id="l1-v-l2">-- <span class="data-unit">V</span></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CURRENT</span>
+            <span class="data-value" id="l1-a-l2">-- <span class="data-unit">A</span></span>
+          </div>
+        </div>
       </div>
     </div>
+
+    <!-- L2 負載 -->
+    <div class="panel-card load">
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L2 <div class="status-dot"></div></h2>
+      <div class="data-grid">
+        <div class="phase-group">
+          <div class="phase-title">LINE 1 (L1)</div>
+          <div class="data-row">
+            <span class="data-label">VOLTAGE</span>
+            <span class="data-value" id="l2-v-l1">-- <span class="data-unit">V</span></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CURRENT</span>
+            <span class="data-value" id="l2-a-l1">-- <span class="data-unit">A</span></span>
+          </div>
+        </div>
+        <div class="phase-group">
+          <div class="phase-title">LINE 2 (L2)</div>
+          <div class="data-row">
+            <span class="data-label">VOLTAGE</span>
+            <span class="data-value" id="l2-v-l2">-- <span class="data-unit">V</span></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CURRENT</span>
+            <span class="data-value" id="l2-a-l2">-- <span class="data-unit">A</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- L3 負載 -->
+    <div class="panel-card load">
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L3 <div class="status-dot"></div></h2>
+      <div class="data-grid">
+        <div class="phase-group">
+          <div class="phase-title">LINE 1 (L1)</div>
+          <div class="data-row">
+            <span class="data-label">VOLTAGE</span>
+            <span class="data-value" id="l3-v-l1">-- <span class="data-unit">V</span></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CURRENT</span>
+            <span class="data-value" id="l3-a-l1">-- <span class="data-unit">A</span></span>
+          </div>
+        </div>
+        <div class="phase-group">
+          <div class="phase-title">LINE 2 (L2)</div>
+          <div class="data-row">
+            <span class="data-label">VOLTAGE</span>
+            <span class="data-value" id="l3-v-l2">-- <span class="data-unit">V</span></span>
+          </div>
+          <div class="data-row">
+            <span class="data-label">CURRENT</span>
+            <span class="data-value" id="l3-a-l2">-- <span class="data-unit">A</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
-<footer>
-  HEMS PROTOTYPE — DATA SOURCED FROM <a href="#">/data/*.csv</a> — FOR ACADEMIC PROJECT PREVIEW ONLY
-</footer>
-
 <script>
-/* ============================================================
-   資料層：CSV 讀取
-   ============================================================ */
-const CSV_FALLBACK = {
-  devices: `id,label,icon_key,status,power_w,voltage_v,current_a,trend_scale
-floor1,1F設備總覽,floor,ON,110,110,1.0,1.0
-floor2,2F設備總覽,floor,ON,85,110,0.8,0.78
-floor3,3F設備總覽,floor,OFF,400,110,3.6,2.4
-meter,電錶總覽,meter,ON,3200,220,14.5,18.5
-panel,配電盤總覽,panel,ON,5000,220,22.7,26.0
-solar,太陽能及儲能系統,solar,ON,110,110,1.0,1.0`,
-  load: `hour,total_kw
-00:00,0.3
-01:00,0.2
-02:00,0.2
-03:00,0.2
-04:00,0.2
-05:00,0.3
-06:00,0.6
-07:00,4.2
-08:00,0.9
-09:00,0.5
-10:00,0.4
-11:00,4.4
-12:00,0.6
-13:00,0.5
-14:00,0.6
-15:00,0.7
-16:00,1.4
-17:00,1.9
-18:00,4.8
-19:00,4.3
-20:00,3.6
-21:00,1.8
-22:00,0.8
-23:00,0.4`
-};
+// ==========================================
+// 測試切換功能 (供您預覽市電與電池的動態效果切換)
+// ==========================================
+// 之後串接 API 時，您可以根據 CSV 的條件來呼叫這個函數
+function setPowerSource(sourceType) {
+  const badge = document.getElementById('powerSourceBadge');
+  const svgText = document.getElementById('svg-source-text');
+  const activeLines = document.querySelectorAll('.flow-active');
 
-async function loadCSV(name, path){
-  try{
-    const res = await fetch(path);
-    if(!res.ok) throw new Error('no file');
-    const text = await res.text();
-    return Papa.parse(text.trim(), {header:true, dynamicTyping:true}).data;
-  }catch(e){
-    return Papa.parse(CSV_FALLBACK[name].trim(), {header:true, dynamicTyping:true}).data;
+  if (sourceType === 'GRID') {
+    // 切換為市電 (青色)
+    badge.className = 'power-source-badge source-grid';
+    badge.innerHTML = '<span style="font-size:18px; margin-right:8px;">⚡</span> GRID POWER (市電供電)';
+    svgText.textContent = 'GRID';
+    svgText.style.fill = 'var(--grid-color)';
+    activeLines.forEach(line => line.style.stroke = 'var(--grid-color)');
+  } else if (sourceType === 'BATT') {
+    // 切換為電池 (黃色)
+    badge.className = 'power-source-badge source-batt';
+    badge.innerHTML = '<span style="font-size:18px; margin-right:8px;">🔋</span> BESS POWER (電池供電)';
+    svgText.textContent = 'BATT';
+    svgText.style.fill = 'var(--batt-color)';
+    activeLines.forEach(line => line.style.stroke = 'var(--batt-color)');
   }
 }
 
-const ICONS = {
-  floor: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="15" y="35" width="70" height="55" stroke="#c8ff4d" stroke-width="1.5"/><polygon points="10,38 50,10 90,38" stroke="#c8ff4d" stroke-width="1.5" fill="none"/><rect x="45" y="60" width="14" height="25" fill="#c8ff4d" opacity="0.45"/><rect x="25" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/><rect x="61" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/></svg>`,
-  meter: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="20" y="15" width="60" height="70" stroke="#c8ff4d" stroke-width="1.5"/><circle cx="50" cy="45" r="16" stroke="#c8ff4d" stroke-width="1.5"/><line x1="50" y1="45" x2="58" y2="34" stroke="#c8ff4d" stroke-width="1.5"/><line x1="35" y1="70" x2="65" y2="70" stroke="#c8ff4d" stroke-width="1.5"/></svg>`,
-  panel: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="22" y="10" width="56" height="80" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="25" x2="70" y2="25" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="40" x2="70" y2="40" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="55" x2="70" y2="55" stroke="#c8ff4d" stroke-width="1.5"/><line x1="30" y1="70" x2="70" y2="70" stroke="#c8ff4d" stroke-width="1.5"/></svg>`,
-  solar: `<svg width="240" height="240" viewBox="0 0 100 100" fill="none"><polygon points="15,35 70,20 85,35 30,50" stroke="#c8ff4d" stroke-width="1.5"/><line x1="15" y1="35" x2="30" y2="50" stroke="#c8ff4d" stroke-width="1"/><line x1="70" y1="20" x2="85" y2="35" stroke="#c8ff4d" stroke-width="1"/><rect x="20" y="65" width="55" height="20" stroke="#c8ff4d" stroke-width="1.5"/><line x1="33" y1="65" x2="33" y2="85" stroke="#c8ff4d" stroke-width="1"/><line x1="46" y1="65" x2="46" y2="85" stroke="#c8ff4d" stroke-width="1"/><line x1="59" y1="65" x2="59" y2="85" stroke="#c8ff4d" stroke-width="1"/></svg>`
-};
-
-let charts = {};
-function killChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
-
-const chartBase = {
-  responsive:true,
-  plugins:{legend:{display:false}},
-  scales:{
-    x:{ticks:{color:'#5a5a60', font:{family:'Space Mono', size:9}}, grid:{color:'rgba(255,255,255,0.05)'}},
-    y:{ticks:{color:'#5a5a60', font:{family:'Space Mono', size:9}}, grid:{color:'rgba(255,255,255,0.05)'}}
-  }
-};
-
-async function initDetail(route){
-  const devices = await loadCSV('devices','./data/devices.csv');
-  const d = devices.find(x=>x.id===route);
-  if(!d) return;
-  document.getElementById('detailEyebrow').textContent = 'DEVICE / ' + route.toUpperCase();
-  document.getElementById('detailTitle').textContent = d.label;
-  const badge = document.getElementById('detailBadge');
-  badge.textContent = d.status;
-  badge.className = 'badge ' + (d.status==='ON' ? 'badge-on':'badge-off');
-  document.getElementById('detailPower').textContent = d.power_w + 'W';
-  document.getElementById('detailVoltage').textContent = d.voltage_v + 'V';
-  document.getElementById('detailCurrent').textContent = d.current_a + 'A';
-  document.getElementById('detailIcon').innerHTML = ICONS[d.icon_key] || '';
-
-  const trend = await loadCSV('load','./data/load_profile.csv');
-  const scaled = trend.map(r=> +(r.total_kw * d.trend_scale).toFixed(2));
-  killChart('detailChart');
-  charts.detailChart = new Chart(document.getElementById('detailChart'), {
-    type:'line',
-    data:{labels:trend.map(r=>r.hour), datasets:[{data:scaled, borderColor:'#c8ff4d', backgroundColor:'rgba(200,255,77,0.06)', fill:true, tension:0.3, pointRadius:0, borderWidth:1.5}]},
-    options: chartBase
-  });
-}
-
-window.addEventListener('scroll', ()=>{
-  document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 40);
-});
-
-(function boot(){
-  // 這裡決定要載入哪一個設備的資料，05電錶對應的是 'meter'
-  // 如果是其他檔案，請修改這裡的字串，例如 'floor1', 'solar', 'panel'
-  initDetail('panel');
-})();
+// 供測試預覽：每 5 秒自動切換一次供電來源
+let isGrid = true;
+setInterval(() => {
+  isGrid = !isGrid;
+  setPowerSource(isGrid ? 'GRID' : 'BATT');
+}, 5000);
 </script>
+
 </body>
 </html>

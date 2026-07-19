@@ -20,6 +20,8 @@ def run_basecontrol_simulation():
     total_steps = 96
     history_data = []#等等儲存結果的陣列
     all_violation=[]#儲存電路異常的數值
+    # 🌟 新增：專門用來累積並輸出給前端畫折線圖的電錶陣列
+    meters_history_data = []
 
 
     # 配電盤定義
@@ -60,9 +62,31 @@ def run_basecontrol_simulation():
         time_str = f"{h:02d}:{m:02d}"
 
         # 2. 抓取狀態與計算淨功率
-        dss.Circuit.SetActiveElement("Storage.Battery_Sys")
-        soc_str = dss.Properties.Value("%stored")
-        soc = float(soc_str) if soc_str else 0.0
+        soc = 0.0
+        bess_kw = 0.0
+        bess_amp = 0.0
+
+        if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
+            var_names = dss.CktElement.AllVariableNames()
+            var_values = dss.CktElement.AllVariableValues()
+            
+            # 抓取 SoC
+            if "%stored" in var_names:
+                idx = var_names.index("%stored")
+                soc = float(var_values[idx])
+            else:
+                soc_str = dss.Properties.Value("%stored")
+                if soc_str:
+                    soc = float(soc_str.replace('%', '').strip())
+
+            # 抓取即時功率 (kW) 與 電流 (A)，供後續 CSV 輸出使用
+            total_powers = dss.CktElement.TotalPowers()
+            if total_powers:
+                bess_kw = abs(total_powers[0])
+            
+            currents_mag = dss.CktElement.CurrentsMagAng()
+            if currents_mag:
+                bess_amp = round(currents_mag[0], 2)
         
         pv_kw = pv_w_list[step] / 1000.0   
         load_kw = total_load_w_list[step] / 1000.0
@@ -181,6 +205,17 @@ def run_basecontrol_simulation():
             {"floor_name": "floor3", "load_list": floor3_loads}
         ]
 
+        bess_data = [{
+            "time": time_str,
+            "soc": round(soc, 2),
+            "power_kw": round(bess_kw, 2),
+            "current_a": round(bess_amp, 2)
+        }]
+
+        bess_csv_path = rf"C:\projects\hems-simulation-web\data\sample\bess_status.csv"
+        pd.DataFrame(bess_data).to_csv(bess_csv_path, index=False, encoding='utf-8-sig')
+
+
         # 批次處理每一層樓
         for floor in all_floors_config:
             device_data = []
@@ -224,7 +259,7 @@ def run_basecontrol_simulation():
 
             # 將該樓層的數據輸出為獨立的 CSV 檔
             df_devices = pd.DataFrame(device_data)
-            output_path = rf"C:\projects\hems-simulation-web\results\data\{floor['floor_name']}_devices.csv"
+            output_path = rf"C:\projects\hems-simulation-web\data\sample\{floor['floor_name']}_devices.csv"
             df_devices.to_csv(output_path, index=False, encoding='utf-8-sig')
 
 
@@ -273,6 +308,8 @@ def run_basecontrol_simulation():
             row_dict[f"{p_name}_總電流_L2(A)"] = i2
 
         # 抓取各電錶當前的累積用電量 (kWh)
+        meter_row = {"Time": time_str}
+
         for ch_name, dss_name in meter_targets.items():
             dss.Meters.Name(dss_name)
             regs = dss.Meters.RegisterValues()
@@ -282,8 +319,16 @@ def run_basecontrol_simulation():
             kwh = round(reg_map.get('kWh', 0), 5)
             row_dict[f"{ch_name}_當前累積功率(kWh)"] = kwh
 
+            # 寫入獨立的 CSV 用字典
+            meter_row[f"{ch_name}_當前累積功率(kWh)"] = kwh
+
+        #獨立的電錶值
+        meters_history_data.append(meter_row)
         # 將這一列整合完畢的資料放入總表中
         history_data.append(row_dict)
+
+        meters_csv_path = rf"C:\projects\hems-simulation-web\data\sample\All_meter.csv"
+        pd.DataFrame(meters_history_data).to_csv(meters_csv_path, index=False, encoding='utf-8-sig')
 
     # 迴圈結束，轉換為 DataFrame
     df_history = pd.DataFrame(history_data)
