@@ -52,7 +52,16 @@ def run_basecontrol_simulation():
     load_cols = [c for c in df_loads_brain.columns if c not in ['Time', 'Hour', 'Minute']]
     total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()
 
+    try:
+        df_pso = pd.read_csv(r".\data\sample\pso_battery_power.csv")
+        pso_kw_list = df_pso['Power_kW'].tolist()
+        print("✅ 成功載入 PSO 電池排程！")
+    except FileNotFoundError:
+        print("⚠️ 找不到 PSO 檔案，預設全天待機 (0 kW)。")
+        pso_kw_list = [0.0] * total_steps
+
     is_island_mode = False
+
 
     for step in range(total_steps):
         # 1. 處理時間 (15分鐘解析度)
@@ -107,32 +116,56 @@ def run_basecontrol_simulation():
         # ⚡ 4. 全新電池充放電行為控制 (淨功率追蹤)
         # ==========================================
         if is_island_mode:
-            # 停電模式：強制放電給家裡用
-            dss.Text.Command("Edit Storage.Battery_Sys state=DISCHARGING kW=3.0")
+            # 停電模式：強制放電給家裡用 (優先度最高)
+            dss.Text.Command("Edit Storage.Battery_Sys %Discharge=60 State=DISCHARGING")
         else:
-            if net_kw > 0.05:
-                # 狀況 A：有餘電 (太陽能 > 家裡用電) -> 充電
-                if soc >= 99.9:
-                    dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
-                else:
-                    charge_kw = min(net_kw, 5.0)
-                    charge_pct = round((charge_kw / 5.0) * 100, 2)
-                    dss.Text.Command(f"Edit Storage.Battery_Sys state=CHARGING %Charge={charge_pct}")
-                    
-            elif net_kw < -0.05:
-                # 狀況 B：太陽能不夠用 (或晚上沒太陽) -> 放電補足
-                if soc <= 20.0:
-                    dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
-                else:
-                    discharge_kw = min(abs(net_kw), 5.0)
-                    dss.Text.Command(f"Edit Storage.Battery_Sys state=DISCHARGING kW={round(discharge_kw, 2)}")
-                    
-            else:
-                # 狀況 C：剛剛好抵銷 -> 待機
-                dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+            # 從 PSO 陣列中取出這個時間步的指令 (假設 pso_kw_list 已經讀取好了)
+            current_pso_kw = pso_kw_list[step] 
+
+        if current_pso_kw > 0:
+            # PSO > 0 代表要求放電
+            dss.Text.Command("edit Storage.Battery_Sys State=DISCHARGING")
+            dss.Text.Command(f"edit Storage.Battery_Sys kW={current_pso_kw}")
+            
+        elif current_pso_kw < 0:
+            # PSO < 0 代表要求充電 (注意：寫入 OpenDSS 的 kW 必須是正數，靠 State 來決定方向)
+            dss.Text.Command("edit Storage.Battery_Sys State=CHARGING")
+            dss.Text.Command(f"edit Storage.Battery_Sys kW={abs(current_pso_kw)}")
+                
+        else:
+            # PSO = 0 代表待機
+            dss.Text.Command("edit Storage.Battery_Sys State=IDLING")
 
         # 5. 執行這 15 分鐘的物理計算 (Solve)
         dss.Text.Command("Solve")
+
+        if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
+            
+            # 1. 抓取我們「期望」的指令
+            expected_pso = pso_kw_list[step]
+            
+            # 2. 抓取 OpenDSS 「最終決定」的終端實功率 (P) 與 虛功率 (Q)
+            actual_powers = dss.CktElement.Powers()
+            actual_kw = actual_powers[0] if actual_powers else 0.0
+            
+            # 3. 抓取 OpenDSS 內部隱藏的所有變數狀態
+            var_names = dss.CktElement.AllVariableNames()
+            var_values = dss.CktElement.AllVariableValues()
+            
+            # 將兩個陣列打包成字典，方便尋找
+            internal_vars = dict(zip(var_names, var_values))
+            
+            # 提取關鍵的內部判斷依據
+            internal_state = internal_vars.get('State', 0)
+            internal_soc = internal_vars.get('%stored', 0)
+            internal_losses = internal_vars.get('Losses', 0)
+            
+            print(f"🕒 [{time_str}] PSO指令: {expected_pso} kW")
+            print(f"   👉 物理端輸出: {round(actual_kw, 3)} kW (差距: {round(expected_pso - actual_kw, 3)} kW)")
+            print(f"   👉 內部狀態碼 (State): {internal_state} (1=放電, -1=充電, 0=待機)")
+            print(f"   👉 當前深層 SOC: {round(internal_soc, 2)} %")
+            print(f"   👉 內部熱損耗: {round(internal_losses, 3)} kW")
+            print("-" * 40)
 
         # ==========================================
         # 🌟 新增：抓取 1F 16 個設備的真實物理狀態，並輸出給網頁前端

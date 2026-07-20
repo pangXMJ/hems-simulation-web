@@ -45,6 +45,39 @@ a{color:inherit;}
 .reveal{opacity:0; transform:translateY(28px); transition:opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1);}
 .reveal.in{opacity:1; transform:translateY(0);}
 
+
+/* ==========================================
+   全域模式切換開關 (Baseline vs PSO)
+   ========================================== */
+.mode-toggle-container {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line);
+  padding: 6px 14px; border-radius: 20px;
+  margin-right: 20px;
+}
+.mode-label {
+  font-family: 'Space Mono', monospace; font-size: 11px;
+  color: var(--dim); transition: 0.3s;
+}
+.mode-label.active { color: var(--accent); font-weight: bold; }
+
+.toggle-switch { position: relative; display: inline-block; width: 36px; height: 18px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+  background-color: var(--faint); transition: .4s; border-radius: 18px;
+}
+.toggle-slider:before {
+  position: absolute; content: ""; height: 12px; width: 12px;
+  left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%;
+}
+.toggle-switch input:checked + .toggle-slider { background-color: var(--accent); }
+.toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+
+
+
+
 /* ---------- nav ---------- */
 .topbar{
   position:fixed; top:0; left:0; right:0; z-index:100;
@@ -183,12 +216,24 @@ footer a{color:var(--accent); text-decoration:none;}
     <div class="ring"></div>
     <span>HEMS</span>
   </div>
+
   <div class="nav-right">
+    <!-- 🌟 新增：模式切換器 -->
+    <div class="mode-toggle-container">
+      <span class="mode-label" id="label-baseline">BASELINE</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="mainModeSwitch" checked onchange="toggleMainMode()">
+        <span class="toggle-slider"></span>
+      </label>
+      <span class="mode-label active" id="label-pso">PSO OPTIMIZED</span>
+    </div>
+
     <div class="crumb" id="crumbText">主頁 / HOME</div>
   </div>
-</div>
+</div> <!-- 🌟 就是少了這一個！用來關閉 topbar -->
 
 <div id="home-view">
+
   <section class="hero">
     <p class="hero-eyebrow">Home Energy Management System — 即時能源監控展示</p>
 
@@ -427,105 +472,23 @@ footer a{color:var(--accent); text-decoration:none;}
 <footer>
   HEMS PROTOTYPE — DATA SOURCED FROM <a href="#">/data/*.csv</a> — FOR ACADEMIC PROJECT PREVIEW ONLY
 </footer>
-
 <script>
 /* ============================================================
-   資料層：CSV 讀取
+   資料層：CSV 讀取與備用資料 (Fallback)
    ============================================================ */
 const CSV_FALLBACK = {
-  devices: `id,label,icon_key,status,power_w,voltage_v,current_a,trend_scale
-floor1,1F設備總覽,floor,ON,110,110,1.0,1.0
-floor2,2F設備總覽,floor,ON,85,110,0.8,0.78
-floor3,3F設備總覽,floor,OFF,400,110,3.6,2.4
-meter,電錶總覽,meter,ON,3200,220,14.5,18.5
-panel,配電盤總覽,panel,ON,5000,220,22.7,26.0
-solar,太陽能及儲能系統,solar,ON,110,110,1.0,1.0`,
-  load: `hour,total_kw
-00:00,0.3
-01:00,0.2
-02:00,0.2
-03:00,0.2
-04:00,0.2
-05:00,0.3
-06:00,0.6
-07:00,4.2
-08:00,0.9
-09:00,0.5
-10:00,0.4
-11:00,4.4
-12:00,0.6
-13:00,0.5
-14:00,0.6
-15:00,0.7
-16:00,1.4
-17:00,1.9
-18:00,4.8
-19:00,4.3
-20:00,3.6
-21:00,1.8
-22:00,0.8
-23:00,0.4`,
-  grid: `hour,grid_kw
-0,0.05
-2,0.04
-4,0.03
-6,0.05
-8,0.06
-10,0.05
-12,0.9
-14,0.06
-16,0.05
-18,0.04
-20,0.05
-22,0.04`,
-  battery: `hour,battery_kw
-0,-1.1
-2,-0.6
-4,-0.5
-6,-0.3
-8,0.4
-10,1.1
-12,1.3
-14,1.2
-16,1.0
-18,-0.6
-20,-0.7
-22,-0.6`,
-  fitness: `iteration,fitness
-0,260
-20,60
-50,45
-100,38
-150,30
-200,25
-250,15
-300,6
-350,3
-400,2
-450,2
-500,2`,
-  soc: `hour,soc
-0,48
-2,34
-4,29
-6,26
-8,25
-10,28
-12,30
-14,85
-15,88
-16,87
-18,80
-20,64
-22,52
-23,49`,
-  summary: `metric,value
-today_kwh,18.37
-device_count,9
-cost_before,19.20
-cost_after,14.71
-savings_amount,4.49
-savings_pct,23.4`
+  devices: `id,label,icon_key,status,power_w,voltage_v,current_a,trend_scale\nfloor1,1F設備總覽,floor,ON,110,110,1.0,1.0\nfloor2,2F設備總覽,floor,ON,85,110,0.8,0.78\nfloor3,3F設備總覽,floor,OFF,400,110,3.6,2.4\nmeter,電錶總覽,meter,ON,3200,220,14.5,18.5\npanel,配電盤總覽,panel,ON,5000,220,22.7,26.0\nsolar,太陽能及儲能系統,solar,ON,110,110,1.0,1.0`,
+  load: `hour,total_kw\n00:00,0.3\n06:00,0.6\n12:00,0.6\n18:00,4.8\n23:00,0.4`,
+  grid: `hour,grid_kw\n00:00,0.05\n12:00,0.9\n18:00,0.04`,
+  battery: `hour,battery_kw\n00:00,-1.1\n12:00,1.3\n18:00,-0.6`,
+  fitness: `iteration,fitness\n0,260\n100,38\n500,2`,
+  soc: `hour,soc\n00:00,48\n12:00,30\n18:00,80`,
+  summary: `metric,value\ntoday_kwh,18.37\ndevice_count,9\ncost_before,19.20\ncost_after,14.71\nsavings_amount,4.49\nsavings_pct,23.4`,
+  
+  // 基準模式 (Baseline) 的預設防呆空資料，避免找不到檔案時網頁崩潰
+  base_grid: `hour,grid_kw\n00:00,0\n12:00,0\n18:00,0`,
+  base_battery: `hour,battery_kw\n00:00,0\n12:00,0\n18:00,0`,
+  base_soc: `hour,soc\n00:00,0\n12:00,0\n18:00,0`
 };
 
 async function loadCSV(name, path){
@@ -535,79 +498,144 @@ async function loadCSV(name, path){
     const text = await res.text();
     return Papa.parse(text.trim(), {header:true, dynamicTyping:true}).data;
   }catch(e){
+    console.warn(`[讀取警告] 找不到 ${path}，啟用 ${name} 備用資料。`);
     return Papa.parse(CSV_FALLBACK[name].trim(), {header:true, dynamicTyping:true}).data;
   }
 }
 
+/* ============================================================
+   全域狀態與圖表實例
+   ============================================================ */
 let charts = {};
 function killChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
 
 const chartBase = {
-  responsive:true,
-  plugins:{legend:{display:false}},
-  scales:{
-    x:{ticks:{color:'#5a5a60', font:{family:'Space Mono', size:9}}, grid:{color:'rgba(255,255,255,0.05)'}},
-    y:{ticks:{color:'#5a5a60', font:{family:'Space Mono', size:9}}, grid:{color:'rgba(255,255,255,0.05)'}}
+  responsive: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+    y: { ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
   }
 };
 
+let globalData = {
+  summary: {},
+  pso: { grid: [], bat: [], soc: [] },
+  base: { grid: [], bat: [], soc: [] }
+};
+
+/* ============================================================
+   初始化：載入全部真實 CSV 資料並建立圖表
+   ============================================================ */
 async function initHome(){
+  // 1. 讀取摘要數據與設備清單
   const summaryRows = await loadCSV('summary','./data/summary.csv');
-  const S = {}; summaryRows.forEach(r=>S[r.metric]=r.value);
-  document.getElementById('statTodayKwh').textContent = S.today_kwh + ' 度';
-  document.getElementById('statDeviceCount').textContent = S.device_count + ' 台';
-  document.getElementById('costAfter').textContent = 'NT$ ' + S.cost_after;
-  document.getElementById('costDelta').textContent = '↓ -NT$' + S.savings_amount + ' (' + S.savings_pct + '%)';
+  summaryRows.forEach(r => globalData.summary[r.metric] = r.value);
+
+  document.getElementById('statTodayKwh').textContent = globalData.summary.today_kwh + ' 度';
+  document.getElementById('statDeviceCount').textContent = globalData.summary.device_count + ' 台';
 
   const devices = await loadCSV('devices','./data/devices.csv');
-  const toggleWrap = document.getElementById('toggleList');
-  toggleWrap.innerHTML = devices.map(d=>`
+  document.getElementById('toggleList').innerHTML = devices.map(d=>`
     <div class="toggle-item">
       <span>${d.label.replace(/總覽|設備|設施/g,'')}</span>
       <div class="switch ${d.status==='ON'?'on':''}"></div>
     </div>`).join('');
 
+  // 2. 讀取不受模式影響的共通資料 (負載預測與演算法適應度)
   const load = await loadCSV('load','./data/load_profile.csv');
-  killChart('loadChart');
-  charts.loadChart = new Chart(document.getElementById('loadChart'), {
-    type:'bar',
-    data:{labels:load.map(r=>r.hour), datasets:[{data:load.map(r=>r.total_kw), backgroundColor:'#c8ff4d', borderRadius:0}]},
-    options: chartBase
-  });
-
-  const grid = await loadCSV('grid','./data/grid_power.csv');
-  killChart('gridChart');
-  charts.gridChart = new Chart(document.getElementById('gridChart'), {
-    type:'bar',
-    data:{labels:grid.map(r=>r.hour), datasets:[{data:grid.map(r=>r.grid_kw), backgroundColor:'#f3f2ee', borderRadius:0}]},
-    options: chartBase
-  });
-
-  const bat = await loadCSV('battery','./data/battery_power.csv');
-  killChart('batteryChart');
-  charts.batteryChart = new Chart(document.getElementById('batteryChart'), {
-    type:'bar',
-    data:{labels:bat.map(r=>r.hour), datasets:[{data:bat.map(r=>r.battery_kw), backgroundColor:bat.map(r=>r.battery_kw>=0?'#c8ff4d':'#3a3a3e'), borderRadius:0}]},
-    options: chartBase
-  });
-
   const fit = await loadCSV('fitness','./data/pso_fitness.csv');
-  killChart('fitnessChart');
+
+  // 3. 讀取 PSO 優化後的資料 (您的原始資料路徑)
+  globalData.pso.grid = await loadCSV('grid','./data/grid_power.csv');
+  globalData.pso.bat = await loadCSV('battery','./data/battery_power.csv');
+  globalData.pso.soc = await loadCSV('soc','./data/battery_soc.csv');
+
+  // 4. 讀取 Baseline 基準資料 (優化前) => ⚠️ 請確保有輸出這三個真實的 CSV 檔案
+  globalData.base.grid = await loadCSV('base_grid','./data/base_grid_power.csv');
+  globalData.base.bat = await loadCSV('base_battery','./data/base_battery_power.csv');
+  globalData.base.soc = await loadCSV('base_soc','./data/base_battery_soc.csv');
+
+  // 5. 繪製靜態圖表 (負載與適應度)
+  charts.loadChart = new Chart(document.getElementById('loadChart'), {
+    type: 'bar',
+    data: { labels: load.map(r=>r.hour), datasets: [{ data: load.map(r=>r.total_kw), backgroundColor: '#c8ff4d', borderRadius: 0 }] },
+    options: chartBase
+  });
+  
   charts.fitnessChart = new Chart(document.getElementById('fitnessChart'), {
-    type:'line',
-    data:{labels:fit.map(r=>r.iteration), datasets:[{data:fit.map(r=>r.fitness), borderColor:'#f3f2ee', backgroundColor:'transparent', tension:0.3, pointRadius:0, borderWidth:1.5}]},
+    type: 'line',
+    data: { labels: fit.map(r=>r.iteration), datasets: [{ data: fit.map(r=>r.fitness), borderColor: '#f3f2ee', backgroundColor: 'transparent', tension: 0.3, pointRadius: 0, borderWidth: 1.5 }] },
     options: chartBase
   });
 
-  const soc = await loadCSV('soc','./data/battery_soc.csv');
-  killChart('socChart');
+  // 6. 初始化動態圖表 (先以空資料建立，稍後交給 toggleMainMode 填入)
+  charts.gridChart = new Chart(document.getElementById('gridChart'), {
+    type: 'bar', data: { labels: [], datasets: [{ data: [], backgroundColor: '#f3f2ee', borderRadius: 0 }] }, options: chartBase
+  });
+  
+  charts.batteryChart = new Chart(document.getElementById('batteryChart'), {
+    type: 'bar', data: { labels: [], datasets: [{ data: [], borderRadius: 0 }] }, options: chartBase
+  });
+  
   charts.socChart = new Chart(document.getElementById('socChart'), {
-    type:'line',
-    data:{labels:soc.map(r=>r.hour), datasets:[{data:soc.map(r=>r.soc), borderColor:'#c8ff4d', backgroundColor:'rgba(200,255,77,0.06)', fill:true, tension:0.3, pointRadius:0, borderWidth:1.5}]},
+    type: 'line',
+    data: { labels: [], datasets: [{ data: [], borderColor: '#c8ff4d', backgroundColor: 'rgba(200,255,77,0.06)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 }] },
     options: chartBase
   });
+
+  // 7. 根據目前的開關狀態，填入對應的資料
+  toggleMainMode();
 }
 
+/* ============================================================
+   核心邏輯：動態切換 Baseline 與 PSO 模式
+   ============================================================ */
+function toggleMainMode() {
+  const isPso = document.getElementById('mainModeSwitch').checked;
+  const targetData = isPso ? globalData.pso : globalData.base;
+  
+  // 1. 切換開關文字的高亮樣式
+  document.getElementById('label-baseline').classList.toggle('active', !isPso);
+  document.getElementById('label-pso').classList.toggle('active', isPso);
+
+  // 2. 切換圖表資料 (提取真實 CSV 數據)
+  charts.gridChart.data.labels = targetData.grid.map(r=>r.hour);
+  charts.gridChart.data.datasets[0].data = targetData.grid.map(r=>r.grid_kw);
+
+  charts.batteryChart.data.labels = targetData.bat.map(r=>r.hour);
+  charts.batteryChart.data.datasets[0].data = targetData.bat.map(r=>r.battery_kw);
+  // 動態上色：正數(放電)為綠色，負數(充電)為深灰色
+  charts.batteryChart.data.datasets[0].backgroundColor = targetData.bat.map(r=>r.battery_kw>=0 ? '#c8ff4d' : '#3a3a3e');
+
+  charts.socChart.data.labels = targetData.soc.map(r=>r.hour);
+  charts.socChart.data.datasets[0].data = targetData.soc.map(r=>r.soc);
+  // SOC 曲線顏色切換：PSO 顯示亮綠色，Baseline 顯示黯淡灰白色
+  charts.socChart.data.datasets[0].borderColor = isPso ? '#c8ff4d' : '#8a8a90';
+  charts.socChart.data.datasets[0].backgroundColor = isPso ? 'rgba(200,255,77,0.06)' : 'rgba(255,255,255,0.03)';
+
+  // 3. 切換電費摘要看板
+  if (isPso) {
+    document.getElementById('costAfter').textContent = 'NT$ ' + globalData.summary.cost_after;
+    document.getElementById('costAfter').style.color = 'var(--accent)';
+    document.getElementById('costDelta').textContent = `↓ -NT$${globalData.summary.savings_amount} (${globalData.summary.savings_pct}%)`;
+    document.getElementById('costDelta').style.color = 'var(--dim)';
+  } else {
+    document.getElementById('costAfter').textContent = 'NT$ ' + globalData.summary.cost_before;
+    document.getElementById('costAfter').style.color = 'var(--white)';
+    document.getElementById('costDelta').textContent = '未啟用最佳化排程';
+    document.getElementById('costDelta').style.color = 'var(--off)';
+  }
+
+  // 4. 通知 Chart.js 重繪圖表
+  charts.gridChart.update();
+  charts.batteryChart.update();
+  charts.socChart.update();
+}
+
+/* ============================================================
+   網頁滾動動畫與啟動點
+   ============================================================ */
 function setupReveal(){
   const els = document.querySelectorAll('.reveal:not(.observed)');
   const io = new IntersectionObserver((entries)=>{

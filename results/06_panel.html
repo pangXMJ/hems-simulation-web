@@ -14,9 +14,10 @@
   --bg:#050506; --card:#121214; 
   --line:rgba(255,255,255,0.09); --line-soft:rgba(255,255,255,0.05);
   --white:#f3f2ee; --dim:#8a8a90; --faint:#4d4d52; 
-  --accent:#c8ff4d; --accent-dim:rgba(200,255,77,0.10); 
+  --accent:#c8ff4d; 
   --grid-color: #4deeea; /* 市電顏色 (青色) */
   --batt-color: #ffea4d; /* 電池顏色 (黃色) */
+  --pv-color: #c8ff4d;   /* PV顏色 (綠色) */
   --ep-color: #ff9e4d;   /* EP 主匯流排 (橘色) */
   --load-color: #b74dff; /* 負載 (紫色) */
 }
@@ -42,24 +43,32 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
 .sld-title{ font-family:'Space Mono'; font-size:14px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; }
 
 /* 供電來源指示器 */
-.power-source-badge{ display:flex; align-items:center; gap:12px; font-family:'Bebas Neue'; font-size:24px; letter-spacing:2px; padding:8px 16px; border:1px solid; border-radius:2px; }
+.power-source-badge{ display:flex; align-items:center; gap:12px; font-family:'Bebas Neue'; font-size:24px; letter-spacing:2px; padding:8px 16px; border:1px solid; border-radius:2px; transition: 0.4s; }
 .source-grid{ color:var(--grid-color); border-color:var(--grid-color); background:rgba(77,238,234,0.1); }
 .source-batt{ color:var(--batt-color); border-color:var(--batt-color); background:rgba(255,234,77,0.1); }
+.source-hybrid { 
+  border-color: rgba(255, 255, 255, 0.2); 
+  background: linear-gradient(90deg, rgba(77,238,234,0.15) 0%, rgba(255,234,77,0.15) 100%); 
+}
 
 /* SVG 動態線條設定 */
-.svg-container{ width:100%; height:300px; display:flex; justify-content:center; align-items:center; }
+.svg-container{ width:100%; height:360px; display:flex; justify-content:center; align-items:center; }
 .node-box{ fill: var(--card); stroke: var(--faint); stroke-width: 2; }
-.node-text{ fill: var(--white); font-family: 'Space Mono', monospace; font-size: 16px; font-weight: bold; text-anchor: middle; dominant-baseline: middle; }
-.flow-line{ fill: none; stroke: var(--faint); stroke-width: 4; stroke-linejoin: round; }
-.flow-active{ 
-  stroke: var(--accent); /* 預設動態顏色，可由 JS 更改為市電或電池顏色 */
-  stroke-dasharray: 12 12; 
-  animation: marching-ants 1s linear infinite; 
-}
-@keyframes marching-ants { to { stroke-dashoffset: -24; } }
+.bus-bar{ fill: var(--faint); }
+.node-text{ fill: var(--white); font-family: 'Bebas Neue', monospace; font-size: 18px; letter-spacing: 1px; text-anchor: middle; dominant-baseline: middle; }
+.label-text{ fill: var(--dim); font-family: 'Space Mono', monospace; font-size: 12px; }
+
+/* 靜態底線 */
+.base-line{ fill: none; stroke: var(--line); stroke-width: 4; stroke-linejoin: round; }
+/* 動態流動線 */
+.flow-line{ fill: none; stroke-width: 4; stroke-linejoin: round; stroke-dasharray: 12 12; opacity: 0; transition: opacity 0.3s, stroke 0.3s; }
+.flow-active{ opacity: 1; animation: flow-anim 0.8s linear infinite; }
+
+/* 動畫方向 (從座標起點流向終點) */
+@keyframes flow-anim { to { stroke-dashoffset: -24; } }
 
 /* ==========================================
-   下半部：四節點數據矩陣 (L1/L2 雙相電壓電流)
+   下半部：四節點數據矩陣
    ========================================== */
 .matrix-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 @media(max-width:900px){ .matrix-grid{ grid-template-columns: 1fr; } }
@@ -79,7 +88,7 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
 .data-row{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
 .data-row:last-child{ margin-bottom:0; }
 .data-label{ font-family: 'Space Mono'; font-size: 11px; color: var(--dim); }
-.data-value{ font-family: 'Bebas Neue'; font-size: 24px; color: var(--white); }
+.data-value{ font-family: 'Bebas Neue'; font-size: 24px; color: var(--white); transition: 0.3s; }
 .data-unit{ font-size: 12px; color: var(--dim); font-family: 'Space Mono'; }
 
 </style>
@@ -87,7 +96,7 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
 <body>
 
 <div class="topbar">
-  <div class="brand" onclick="window.location.href='index.html'">
+  <div class="brand" onclick="window.location.href='hems_index.html'">
     <div class="ring"></div><span>HEMS</span>
   </div>
   <div class="nav-right">
@@ -98,55 +107,101 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
 
 <div class="section">
   
-  <!-- ================= 動態電力潮流圖 ================= -->
+  <!-- ================= 動態電力潮流圖 (基於 hems_circuit.py 拓撲) ================= -->
   <div class="sld-card">
     <div class="sld-header">
-      <div class="sld-title">POWER FLOW TOPOLOGY</div>
-      <!-- 目前供電來源指示器 (JS 控制切換 class: source-grid 或 source-batt) -->
+      <div class="sld-title">CIRCUIT TOPOLOGY (hems_circuit.py)</div>
       <div id="powerSourceBadge" class="power-source-badge source-grid">
-        <span style="font-size:18px; margin-right:8px;">⚡</span> GRID POWER (市電供電)
+        <span style="font-size:18px; margin-right:8px;" id="badgeIcon">⚡</span> 
+        <span id="badgeText">GRID POWER (市電供電)</span>
       </div>
     </div>
 
     <div class="svg-container">
-      <svg viewBox="0 0 800 200" width="100%" height="100%">
-        <!-- 基礎靜態線條 (底線) -->
-        <polyline points="150,100 300,100" class="flow-line" />
-        <polyline points="380,100 500,100" class="flow-line" />
-        <polyline points="500,40 500,160" class="flow-line" />
-        <polyline points="500,40 600,40" class="flow-line" />
-        <polyline points="500,100 600,100" class="flow-line" />
-        <polyline points="500,160 600,160" class="flow-line" />
-
-        <!-- 動態電流線條 (覆蓋在上面，使用 flow-active 產生流動感) -->
-        <polyline id="flow-main" points="150,100 300,100" class="flow-line flow-active" style="stroke: var(--grid-color);" />
-        <polyline id="flow-ep-split" points="380,100 500,100" class="flow-line flow-active" style="stroke: var(--grid-color);" />
-        <polyline id="flow-l1" points="500,100 500,40 600,40" class="flow-line flow-active" style="stroke: var(--grid-color);" />
-        <polyline id="flow-l2" points="500,100 600,100" class="flow-line flow-active" style="stroke: var(--grid-color);" />
-        <polyline id="flow-l3" points="500,100 500,160 600,160" class="flow-line flow-active" style="stroke: var(--grid-color);" />
-
-        <!-- 節點方塊 (Source) -->
-        <rect x="50" y="70" width="100" height="60" rx="4" class="node-box" stroke="var(--grid-color)" stroke-width="2"/>
-        <text x="100" y="100" class="node-text" id="svg-source-text" style="fill:var(--grid-color)">GRID</text>
-
-        <!-- 節點方塊 (EP) -->
-        <rect x="300" y="70" width="80" height="60" rx="4" class="node-box" stroke="var(--ep-color)"/>
-        <text x="340" y="100" class="node-text" style="fill:var(--ep-color)">EP</text>
-
-        <!-- 節點方塊 (L1, L2, L3) -->
-        <rect x="600" y="20" width="80" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
-        <text x="640" y="40" class="node-text" style="fill:var(--load-color)">L1</text>
+      <div class="svg-container">
+      <svg viewBox="0 0 900 420" width="100%" height="100%">
         
-        <rect x="600" y="80" width="80" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
-        <text x="640" y="100" class="node-text" style="fill:var(--load-color)">L2</text>
+       <!-- 🌟 修復：加入 gradientUnits="userSpaceOnUse" 解決水平線漸層消失的問題 -->
+        <defs>
+          <!-- x1="110" 代表市電起點，x2="450" 代表配電盤終點，讓漸層完美貼合流動路徑 -->
+          <linearGradient id="hybridGrad" x1="110" y1="0" x2="450" y2="0" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#4deeea" />   <!-- 市電青色 -->
+            <stop offset="100%" stop-color="#ffea4d" /> <!-- 電池黃色 -->
+          </linearGradient>
+        </defs>
         
-        <rect x="600" y="140" width="80" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
-        <text x="640" y="160" class="node-text" style="fill:var(--load-color)">L3</text>
+        <!-- === 靜態底線 (背景軌道) === -->
+        <polyline points="110,210 195,210" class="base-line"/>
+        <!-- === 靜態底線 (背景軌道) === -->
+        <polyline points="110,210 195,210" class="base-line"/> <!-- Grid to T -->
+        <polyline points="205,100 450,100" class="base-line"/> <!-- T to EP -->
+        <polyline points="205,180 450,180" class="base-line"/> <!-- T to L1 -->
+        <polyline points="205,260 450,260" class="base-line"/> <!-- T to L2 -->
+        <polyline points="205,340 450,340" class="base-line"/> <!-- T to L3 -->
+        <polyline points="550,100 660,100" class="base-line"/> <!-- EP to Inv_AC -->
+        <polyline points="660,100 660,60 720,60" class="base-line"/> <!-- Inv_AC to PV -->
+        <polyline points="660,100 660,140 720,140" class="base-line"/> <!-- Inv_AC to BESS -->
+
+        <!-- === 動態電流線條 (ID由 JS 控制) === -->
+        <!-- 1. 市電路徑 -->
+        <polyline id="anim-grid-t" points="110,210 195,210" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        <polyline id="anim-t-ep" points="205,100 450,100" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        <polyline id="anim-t-l1" points="205,180 450,180" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        <polyline id="anim-t-l2" points="205,260 450,260" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        <polyline id="anim-t-l3" points="205,340 450,340" class="flow-line flow-active" style="stroke: var(--grid-color);" />
+        
+       <!-- PV 產電路徑 (PV -> EP) -->
+        <polyline id="anim-pv-ep" points="720,60 660,60 660,100 550,100" class="flow-line" style="stroke: var(--pv-color);" />
+        
+        <!-- BESS 放電路徑 (BESS -> EP) -->
+        <polyline id="anim-bess-ep" points="720,140 660,140 660,100 550,100" class="flow-line" style="stroke: var(--batt-color);" />
+        
+        <!-- BESS 充電路徑 (EP -> BESS，反方向繪製) -->
+        <polyline id="anim-ep-bess" points="550,100 660,100 660,140 720,140" class="flow-line" style="stroke: var(--batt-color);" />
+        
+        <!-- 孤島模式：EP 逆送回 T -->
+        <polyline id="anim-ep-t" points="450,100 205,100" class="flow-line" style="stroke: var(--batt-color);" />
+
+        <!-- === 實體節點 (Boxes) === -->
+        <!-- Source -->
+        <rect x="30" y="185" width="80" height="50" rx="4" class="node-box" stroke="var(--grid-color)"/>
+        <text x="70" y="210" class="node-text" style="fill:var(--grid-color)">GRID</text>
+
+        <!-- 總匯流排 (Meter T) -->
+        <rect x="195" y="80" width="10" height="280" rx="2" class="bus-bar" />
+        <text x="180" y="220" class="label-text" transform="rotate(-90 180,220)">METER T (總匯流)</text>
+
+        <!-- 電錶標籤 (依照腳本定義) -->
+        <text x="320" y="90" class="label-text">Meter A &amp; ATS</text>
+        <text x="320" y="170" class="label-text">Meter B</text>
+        <text x="320" y="250" class="label-text">Meter C</text>
+        <text x="320" y="330" class="label-text">Meter D</text>
+        <text x="610" y="90" class="label-text">Inv_AC</text>
+
+        <!-- 配電盤節點 -->
+        <rect x="450" y="80" width="100" height="40" rx="4" class="node-box" stroke="var(--ep-color)"/>
+        <text x="500" y="100" class="node-text" style="fill:var(--ep-color)">EP PANEL</text>
+        
+        <rect x="450" y="160" width="100" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
+        <text x="500" y="180" class="node-text" style="fill:var(--load-color)">L1 (1F)</text>
+        
+        <rect x="450" y="240" width="100" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
+        <text x="500" y="260" class="node-text" style="fill:var(--load-color)">L2 (2F)</text>
+        
+        <rect x="450" y="320" width="100" height="40" rx="4" class="node-box" stroke="var(--load-color)"/>
+        <text x="500" y="340" class="node-text" style="fill:var(--load-color)">L3 (3F)</text>
+
+        <!-- 儲能與太陽能 -->
+        <rect x="720" y="40" width="90" height="40" rx="4" class="node-box" stroke="var(--pv-color)"/>
+        <text x="765" y="60" class="node-text" style="fill:var(--pv-color)">PV SYS</text>
+
+        <rect x="720" y="120" width="90" height="40" rx="4" class="node-box" stroke="var(--batt-color)"/>
+        <text x="765" y="140" class="node-text" style="fill:var(--batt-color)">BESS</text>
       </svg>
     </div>
   </div>
 
-  <!-- ================= 四節點數據矩陣 (L1/L2 相位) ================= -->
+  <!-- ================= 四節點數據矩陣 ================= -->
   <div class="matrix-grid">
     
     <!-- EP 主匯流排 -->
@@ -155,152 +210,211 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
       <div class="data-grid">
         <div class="phase-group">
           <div class="phase-title">LINE 1 (L1)</div>
-          <div class="data-row">
-            <span class="data-label">VOLTAGE</span>
-            <span class="data-value" id="ep-v-l1">-- <span class="data-unit">V</span></span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">CURRENT</span>
-            <span class="data-value" id="ep-a-l1">-- <span class="data-unit">A</span></span>
-          </div>
+          <div class="data-row"><span class="data-label">VOLTAGE</span><span class="data-value" id="ep-v-l1">-- <span class="data-unit">V</span></span></div>
+          <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="ep-a-l1">-- <span class="data-unit">A</span></span></div>
         </div>
         <div class="phase-group">
           <div class="phase-title">LINE 2 (L2)</div>
-          <div class="data-row">
-            <span class="data-label">VOLTAGE</span>
-            <span class="data-value" id="ep-v-l2">-- <span class="data-unit">V</span></span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">CURRENT</span>
-            <span class="data-value" id="ep-a-l2">-- <span class="data-unit">A</span></span>
-          </div>
+          <div class="data-row"><span class="data-label">VOLTAGE</span><span class="data-value" id="ep-v-l2">-- <span class="data-unit">V</span></span></div>
+          <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="ep-a-l2">-- <span class="data-unit">A</span></span></div>
         </div>
       </div>
     </div>
 
     <!-- L1 負載 -->
     <div class="panel-card load">
-      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L1 <div class="status-dot"></div></h2>
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L1 (1F)<div class="status-dot"></div></h2>
       <div class="data-grid">
         <div class="phase-group">
           <div class="phase-title">LINE 1 (L1)</div>
-          <div class="data-row">
-            <span class="data-label">VOLTAGE</span>
-            <span class="data-value" id="l1-v-l1">-- <span class="data-unit">V</span></span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">CURRENT</span>
-            <span class="data-value" id="l1-a-l1">-- <span class="data-unit">A</span></span>
-          </div>
+          <div class="data-row"><span class="data-label">VOLTAGE</span><span class="data-value" id="l1-v-l1">-- <span class="data-unit">V</span></span></div>
+          <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l1-a-l1">-- <span class="data-unit">A</span></span></div>
         </div>
         <div class="phase-group">
           <div class="phase-title">LINE 2 (L2)</div>
-          <div class="data-row">
-            <span class="data-label">VOLTAGE</span>
-            <span class="data-value" id="l1-v-l2">-- <span class="data-unit">V</span></span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">CURRENT</span>
-            <span class="data-value" id="l1-a-l2">-- <span class="data-unit">A</span></span>
-          </div>
+          <div class="data-row"><span class="data-label">VOLTAGE</span><span class="data-value" id="l1-v-l2">-- <span class="data-unit">V</span></span></div>
+          <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l1-a-l2">-- <span class="data-unit">A</span></span></div>
         </div>
       </div>
     </div>
 
     <!-- L2 負載 -->
     <div class="panel-card load">
-      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L2 <div class="status-dot"></div></h2>
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L2 (2F)<div class="status-dot"></div></h2>
       <div class="data-grid">
         <div class="phase-group">
           <div class="phase-title">LINE 1 (L1)</div>
-          <div class="data-row">
-            <span class="data-label">VOLTAGE</span>
-            <span class="data-value" id="l2-v-l1">-- <span class="data-unit">V</span></span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">CURRENT</span>
-            <span class="data-value" id="l2-a-l1">-- <span class="data-unit">A</span></span>
-          </div>
+          <div class="data-row"><span class="data-label">VOLTAGE</span><span class="data-value" id="l2-v-l1">-- <span class="data-unit">V</span></span></div>
+          <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l2-a-l1">-- <span class="data-unit">A</span></span></div>
         </div>
         <div class="phase-group">
           <div class="phase-title">LINE 2 (L2)</div>
-          <div class="data-row">
-            <span class="data-label">VOLTAGE</span>
-            <span class="data-value" id="l2-v-l2">-- <span class="data-unit">V</span></span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">CURRENT</span>
-            <span class="data-value" id="l2-a-l2">-- <span class="data-unit">A</span></span>
-          </div>
+          <div class="data-row"><span class="data-label">VOLTAGE</span><span class="data-value" id="l2-v-l2">-- <span class="data-unit">V</span></span></div>
+          <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l2-a-l2">-- <span class="data-unit">A</span></span></div>
         </div>
       </div>
     </div>
 
     <!-- L3 負載 -->
     <div class="panel-card load">
-      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L3 <div class="status-dot"></div></h2>
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L3 (3F)<div class="status-dot"></div></h2>
       <div class="data-grid">
         <div class="phase-group">
           <div class="phase-title">LINE 1 (L1)</div>
-          <div class="data-row">
-            <span class="data-label">VOLTAGE</span>
-            <span class="data-value" id="l3-v-l1">-- <span class="data-unit">V</span></span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">CURRENT</span>
-            <span class="data-value" id="l3-a-l1">-- <span class="data-unit">A</span></span>
-          </div>
+          <div class="data-row"><span class="data-label">VOLTAGE</span><span class="data-value" id="l3-v-l1">-- <span class="data-unit">V</span></span></div>
+          <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l3-a-l1">-- <span class="data-unit">A</span></span></div>
         </div>
         <div class="phase-group">
           <div class="phase-title">LINE 2 (L2)</div>
-          <div class="data-row">
-            <span class="data-label">VOLTAGE</span>
-            <span class="data-value" id="l3-v-l2">-- <span class="data-unit">V</span></span>
-          </div>
-          <div class="data-row">
-            <span class="data-label">CURRENT</span>
-            <span class="data-value" id="l3-a-l2">-- <span class="data-unit">A</span></span>
-          </div>
+          <div class="data-row"><span class="data-label">VOLTAGE</span><span class="data-value" id="l3-v-l2">-- <span class="data-unit">V</span></span></div>
+          <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l3-a-l2">-- <span class="data-unit">A</span></span></div>
         </div>
       </div>
     </div>
 
   </div>
 </div>
-
 <script>
 // ==========================================
-// 測試切換功能 (供您預覽市電與電池的動態效果切換)
+// 動態切換：純市電 / 混合併網 / 孤島模式
 // ==========================================
-// 之後串接 API 時，您可以根據 CSV 的條件來呼叫這個函數
-function setPowerSource(sourceType) {
+function setPowerSource(sourceType, bessState) {
   const badge = document.getElementById('powerSourceBadge');
-  const svgText = document.getElementById('svg-source-text');
-  const activeLines = document.querySelectorAll('.flow-active');
+  const icon = document.getElementById('badgeIcon');
+  const text = document.getElementById('badgeText');
+  
+  const pGridT = document.getElementById('anim-grid-t');
+  const pTEp = document.getElementById('anim-t-ep');
+  const pTL1 = document.getElementById('anim-t-l1');
+  const pTL2 = document.getElementById('anim-t-l2');
+  const pTL3 = document.getElementById('anim-t-l3');
+  const pEpT = document.getElementById('anim-ep-t'); // 孤島逆流
 
+  // 狀態 1 & 2：市電有接通 (ATS = GRID)
   if (sourceType === 'GRID') {
-    // 切換為市電 (青色)
-    badge.className = 'power-source-badge source-grid';
-    badge.innerHTML = '<span style="font-size:18px; margin-right:8px;">⚡</span> GRID POWER (市電供電)';
-    svgText.textContent = 'GRID';
-    svgText.style.fill = 'var(--grid-color)';
-    activeLines.forEach(line => line.style.stroke = 'var(--grid-color)');
+    // 啟動市電主幹線動畫
+    pGridT.classList.add('flow-active');
+    pTEp.classList.add('flow-active');
+    pTL1.classList.add('flow-active');
+    pTL2.classList.add('flow-active');
+    pTL3.classList.add('flow-active');
+    pEpT.classList.remove('flow-active');
+
+    // 判斷是否為「混合併網供電」
+    if (bessState === 'DISCHARGING') {
+      badge.className = 'power-source-badge source-hybrid';
+      icon.textContent = '⚡+🔋';
+      text.innerHTML = '<span style="color:var(--grid-color)">GRID</span> & <span style="color:var(--batt-color)">BESS</span> (併網混合供電)';
+      
+      // 🌟 混合模式：將幹線電流顏色改為漸層 (青色過渡到黃色)
+      const hybridColor = 'url(#hybridGrad)';
+      pGridT.style.stroke = hybridColor;
+      pTEp.style.stroke = hybridColor;
+      pTL1.style.stroke = hybridColor;
+      pTL2.style.stroke = hybridColor;
+      pTL3.style.stroke = hybridColor;
+    } else {
+      badge.className = 'power-source-badge source-grid';
+      icon.textContent = '⚡';
+      text.textContent = 'GRID POWER (純市電供電)';
+
+      // 🌟 純市電模式：恢復為純青色
+      const gridColor = 'var(--grid-color)';
+      pGridT.style.stroke = gridColor;
+      pTEp.style.stroke = gridColor;
+      pTL1.style.stroke = gridColor;
+      pTL2.style.stroke = gridColor;
+      pTL3.style.stroke = gridColor;
+    }
+
+  // 狀態 3：市電斷開，完全由電池撐場 (ATS = BATT)
   } else if (sourceType === 'BATT') {
-    // 切換為電池 (黃色)
     badge.className = 'power-source-badge source-batt';
-    badge.innerHTML = '<span style="font-size:18px; margin-right:8px;">🔋</span> BESS POWER (電池供電)';
-    svgText.textContent = 'BATT';
-    svgText.style.fill = 'var(--batt-color)';
-    activeLines.forEach(line => line.style.stroke = 'var(--batt-color)');
+    icon.textContent = '🔋';
+    text.textContent = 'ISLAND MODE (儲能獨立供電)';
+
+    // 關閉市電幹線，啟動電池逆送動畫
+    pGridT.classList.remove('flow-active');
+    pTEp.classList.remove('flow-active');
+    pEpT.classList.add('flow-active');
+    pTL1.classList.add('flow-active'); 
+    pTL2.classList.add('flow-active'); 
+    pTL3.classList.add('flow-active'); 
+
+    // 🌟 孤島模式：全部改為純黃色
+    const battColor = 'var(--batt-color)';
+    pTL1.style.stroke = battColor;
+    pTL2.style.stroke = battColor;
+    pTL3.style.stroke = battColor;
   }
 }
 
-// 供測試預覽：每 5 秒自動切換一次供電來源
-let isGrid = true;
-setInterval(() => {
-  isGrid = !isGrid;
-  setPowerSource(isGrid ? 'GRID' : 'BATT');
-}, 5000);
+// ==========================================
+// API 驅動引擎
+// ==========================================
+async function fetchSwitchboardData() {
+  try {
+    const res = await fetch('/api/grid_status');
+    if (!res.ok) throw new Error('API 連線失敗');
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      document.getElementById('sysTime').textContent = `TIME: ${data.timestamp}`;
+      
+      // 1. 驅動主幹線狀態 (傳入 ATS 與 電池狀態)
+      setPowerSource(data.source, data.bess_state);
+      
+      // 2. 驅動太陽能 PV (綠色軌跡)
+      if (data.pv_active) {
+        document.getElementById('anim-pv-ep').classList.add('flow-active');
+      } else {
+        document.getElementById('anim-pv-ep').classList.remove('flow-active');
+      }
+
+      // 3. 驅動電池獨立的充放電軌跡 (黃色軌跡)
+      const pBessEp = document.getElementById('anim-bess-ep'); // 放電
+      const pEpBess = document.getElementById('anim-ep-bess'); // 充電
+      
+      if (data.bess_state === 'DISCHARGING') {
+        pBessEp.classList.add('flow-active');
+        pEpBess.classList.remove('flow-active');
+      } else if (data.bess_state === 'CHARGING') {
+        pBessEp.classList.remove('flow-active');
+        pEpBess.classList.add('flow-active');
+      } else { 
+        pBessEp.classList.remove('flow-active');
+        pEpBess.classList.remove('flow-active');
+      }
+      
+      // 4. 渲染各盤電壓與電流
+      document.getElementById('ep-v-l1').innerHTML = `${data.ep.v1.toFixed(1)} <span class="data-unit">V</span>`;
+      document.getElementById('ep-a-l1').innerHTML = `${data.ep.a1.toFixed(2)} <span class="data-unit">A</span>`;
+      document.getElementById('ep-v-l2').innerHTML = `${data.ep.v2.toFixed(1)} <span class="data-unit">V</span>`;
+      document.getElementById('ep-a-l2').innerHTML = `${data.ep.a2.toFixed(2)} <span class="data-unit">A</span>`;
+      
+      document.getElementById('l1-v-l1').innerHTML = `${data.l1.v1.toFixed(1)} <span class="data-unit">V</span>`;
+      document.getElementById('l1-a-l1').innerHTML = `${data.l1.a1.toFixed(2)} <span class="data-unit">A</span>`;
+      document.getElementById('l1-v-l2').innerHTML = `${data.l1.v2.toFixed(1)} <span class="data-unit">V</span>`;
+      document.getElementById('l1-a-l2').innerHTML = `${data.l1.a2.toFixed(2)} <span class="data-unit">A</span>`;
+      
+      document.getElementById('l2-v-l1').innerHTML = `${data.l2.v1.toFixed(1)} <span class="data-unit">V</span>`;
+      document.getElementById('l2-a-l1').innerHTML = `${data.l2.a1.toFixed(2)} <span class="data-unit">A</span>`;
+      document.getElementById('l2-v-l2').innerHTML = `${data.l2.v2.toFixed(1)} <span class="data-unit">V</span>`;
+      document.getElementById('l2-a-l2').innerHTML = `${data.l2.a2.toFixed(2)} <span class="data-unit">A</span>`;
+      
+      document.getElementById('l3-v-l1').innerHTML = `${data.l3.v1.toFixed(1)} <span class="data-unit">V</span>`;
+      document.getElementById('l3-a-l1').innerHTML = `${data.l3.a1.toFixed(2)} <span class="data-unit">A</span>`;
+      document.getElementById('l3-v-l2').innerHTML = `${data.l3.v2.toFixed(1)} <span class="data-unit">V</span>`;
+      document.getElementById('l3-a-l2').innerHTML = `${data.l3.a2.toFixed(2)} <span class="data-unit">A</span>`;
+    }
+  } catch (error) {
+    console.error("等待後端資料中...", error);
+  }
+}
+
+// 啟動定時器
+setInterval(fetchSwitchboardData, 1000);
+fetchSwitchboardData();
 </script>
 
 </body>
