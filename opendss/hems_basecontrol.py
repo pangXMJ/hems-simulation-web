@@ -72,9 +72,9 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1):
     if mode in ['pso', 'island']:
         
         try:
-            df_pso = pd.read_csv(r".\data\sample\pso_battery_power.csv")#閱讀pso的排程資料
+            df_pso = pd.read_csv(r".\data\sample\battery_usage_two_stage_summer_weekday_15min.csv")#閱讀pso的排程資料
             #讀取 pso_battery_power.csv 檔案，並將其中的 Power_kW（電池功率千瓦值）欄位轉成列表，覆蓋掉原本的預設值
-            pso_kw_list = df_pso['Power_kW'].tolist()
+            pso_kw_list = df_pso['battery_power_kw'].tolist()
             print("✅ 成功載入 PSO 電池排程！")
         except FileNotFoundError:
             print("⚠️ 找不到 PSO 檔案，退回全天待機 (0 kW)。")
@@ -97,6 +97,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1):
 
 #注意是不是要有跨日模擬（時間重回 00:00）
     for step in range(total_steps):
+        
        # 解決問題 4：時間跨日歸零處理 (% 24)
         current_minute = step * 15
         h = int((current_minute // 60) % 24) 
@@ -301,6 +302,35 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1):
         dss.Text.Command("Solve")
 
 
+        if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
+            
+            # 1. 抓取我們「期望」的指令
+            expected_pso = pso_kw_list[step]
+            
+            # 2. 抓取 OpenDSS 「最終決定」的終端實功率 (P) 與 虛功率 (Q)
+            actual_powers = dss.CktElement.Powers()
+            actual_kw = actual_powers[0] if actual_powers else 0.0
+            
+            # 3. 抓取 OpenDSS 內部隱藏的所有變數狀態
+            var_names = dss.CktElement.AllVariableNames()
+            var_values = dss.CktElement.AllVariableValues()
+            
+            # 將兩個陣列打包成字典，方便尋找
+            internal_vars = dict(zip(var_names, var_values))
+            
+            # 提取關鍵的內部判斷依據
+            internal_state = internal_vars.get('State', 0)
+            internal_soc = internal_vars.get('%stored', 0)
+            internal_losses = internal_vars.get('Losses', 0)
+            
+            print(f"🕒 [{time_str}] PSO指令: {expected_pso} kW")
+            print(f"   👉 物理端輸出: {round(actual_kw, 3)} kW (差距: {round(expected_pso - actual_kw, 3)} kW)")
+            print(f"   👉 內部狀態碼 (State): {internal_state} (1=放電, -1=充電, 0=待機)")
+            print(f"   👉 當前深層 SOC: {round(internal_soc, 2)} %")
+            print(f"   👉 內部熱損耗: {round(internal_losses, 3)} kW")
+            print("-" * 40)
+
+
 
         # 再次更新狀態 (抓取 Solve 後的最終結果)
         if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
@@ -323,7 +353,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1):
         bess_history_data.append({
             "Time": time_str,
             "soc": round(soc, 2),
-            "power_kw": round(bess_kw, 2),
+            "battery_power_kw": round(bess_kw, 2),
             "current_a": round(bess_amp, 2)
         })
 

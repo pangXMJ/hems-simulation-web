@@ -56,7 +56,7 @@ load_cols = [c for c in df_loads_brain.columns if c not in ['Time', 'Hour', 'Min
 total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()
 
 try:
-    df_pso = pd.read_csv(os.path.join(TARGET_DATA_DIR, "pso_battery_power.csv"))
+    df_pso = pd.read_csv(os.path.join(TARGET_DATA_DIR, "battery_usage_two_stage_summer_weekday_15min.csv"))
     # 無視欄位名稱，強制讀取第 2 欄 (Index 1) 的數值
     pso_kw_list = df_pso.iloc[:, 1].tolist() 
 except Exception as e:
@@ -173,28 +173,15 @@ def get_grid_status(web_island_mode_active: bool = False):
     currents_mag = dss.CktElement.CurrentsMagAng()
     bess_amp = round(currents_mag[0], 2) if currents_mag else 0.0
 
-    # 寫入最新資料供網頁即時讀取 (使用算完後的 current_soc)
-    bess_data = [{
-        "time": sim_time_str,
-        "soc": round(current_soc, 2),
-        "power_kw": round(bess_kw, 2),
-        "current_a": round(bess_amp, 2)
-    }]
-    
-    bess_csv_path = os.path.join(DATA_SAVE_DIR, "bess_status.csv")
-    try:
-        pd.DataFrame(bess_data).to_csv(bess_csv_path, index=False, encoding='utf-8-sig')
-    except PermissionError:
-        print(f"⚠️ 警告：無法寫入 {bess_csv_path}，請確認檔案是否被 Excel 開啟！")
 
-    # ==========================================
-    # 抓取電錶歷史資料
-    # ==========================================
     meter_targets = {
         "總電錶T": "KwhT", "PV電錶": "MeterPV", "A電錶": "KwhA",
         "B電錶": "KwhB", "C電錶": "KwhC", "D電錶": "KwhD"
     }
-    
+
+    # ==========================================
+    # 抓取電錶歷史資料
+    # ==========================================
     meter_row = {"Time": sim_time_str}
     for ch_name, dss_name in meter_targets.items():
         dss.Meters.Name(dss_name)
@@ -205,11 +192,10 @@ def get_grid_status(web_island_mode_active: bool = False):
         meter_row[f"{ch_name}_當前累積功率(kWh)"] = kwh
 
     meters_history_data.append(meter_row)
-    meters_csv_path = os.path.join(DATA_SAVE_DIR, "All_meter.csv") 
-    try:
-        pd.DataFrame(meters_history_data).to_csv(meters_csv_path, index=False, encoding='utf-8-sig')
-    except PermissionError:
-        pass
+
+   
+
+
 
     # ==========================================
     # 抓取 1F 到 3F 設備的真實物理狀態
@@ -269,14 +255,15 @@ def get_grid_status(web_island_mode_active: bool = False):
         {"id": "f3_dev_15", "name": "3F 插座 7(L3)", "dss_name": "Load.l3_socket7_an"},
         {"id": "f3_dev_16", "name": "3F 插座 8(L3)", "dss_name": "Load.l3_socket8_bn"}
     ]
-
+    # 👇 ================= 新增這一段 ================= 👇
     all_floors_config = [
         {"floor_name": "floor1", "load_list": floor1_loads},
         {"floor_name": "floor2", "load_list": floor2_loads},
         {"floor_name": "floor3", "load_list": floor3_loads}
     ]
+    # 👆 ============================================== 👆
+    all_floors_results = {}
 
-    os.makedirs(DATA_SAVE_DIR, exist_ok=True)
     for floor in all_floors_config:
         device_data = []
         for dev in floor["load_list"]:
@@ -304,11 +291,11 @@ def get_grid_status(web_island_mode_active: bool = False):
                 "real_v": round(real_v, 1), "current_a": round(amps, 2)
             })
 
-        csv_path = os.path.join(DATA_SAVE_DIR, f"{floor['floor_name']}_devices.csv")
-        pd.DataFrame(device_data).to_csv(csv_path, index=False, encoding='utf-8-sig')
+        # 🌟 將算好的這層樓設備清單，存入字典中 (取代原本寫入 CSV 的動作)
+        all_floors_results[floor['floor_name']] = device_data
 
     # ==========================================
-    # 電壓與電流抓取 (回傳 JSON 給前端)
+    # 電壓與電流抓取 (維持原樣)
     # ==========================================
     def get_bus_voltage(bus_name):
         dss.Circuit.SetActiveBus(bus_name)
@@ -342,21 +329,37 @@ def get_grid_status(web_island_mode_active: bool = False):
 
     source_status = "BATT" if is_island_mode else "GRID"
     
-    # 推進時間步數
     current_step += 1 
 
+    # ==========================================
+    # 🌟 最終回傳 JSON：將所有資料全部打包出去！
+    # ==========================================
     return {
         "status": "success",
         "timestamp": sim_time_str,
         "source": source_status, 
         "pv_active": bool(pv_kw > 0),         
-        "bess_state": current_bess_state,     
+        "bess_state": current_bess_state,
+        
+        # 電池詳細資料
+        "bess_soc": round(current_soc, 2),
+        "bess_power_kw": round(bess_kw, 2),
+        "bess_current_a": round(bess_amp, 2),
+        
+        # 電錶資料
+        "meters": meter_row,
+
+        # 樓層總表電壓電流
         "ep": {"v1": ep_v1, "a1": ep_a1, "v2": ep_v2, "a2": ep_a2},
         "l1": {"v1": l1_v1, "a1": l1_a1, "v2": l1_v2, "a2": l1_a2},
         "l2": {"v1": l2_v1, "a1": l2_a1, "v2": l2_v2, "a2": l2_a2},
-        "l3": {"v1": l3_v1, "a1": l3_a1, "v2": l3_v2, "a2": l3_a2}
+        "l3": {"v1": l3_v1, "a1": l3_a1, "v2": l3_v2, "a2": l3_a2},
+        
+        # 🌟 1F~3F 所有各別設備的即時資料清單
+        "floor1_devices": all_floors_results["floor1"],
+        "floor2_devices": all_floors_results["floor2"],
+        "floor3_devices": all_floors_results["floor3"]
     }
-
 # ==========================================
 # 🌐 靜態網頁伺服器
 # ==========================================

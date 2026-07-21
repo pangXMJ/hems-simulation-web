@@ -216,7 +216,7 @@ footer a{color:var(--accent); text-decoration:none;}
 <body>
 
 <div class="topbar" id="topbar">
-  <div class="brand" onclick="window.location.href='index.html'">
+  <div class="brand" onclick="window.location.href='hems_index.html'">
     <div class="ring"></div>
     <span>HEMS</span>
   </div>
@@ -621,7 +621,8 @@ async function initHome(){
    ============================================================ */
 let isWebIslandMode = false;
 
-function toggleIslandMode() {
+// 🌟 修改：讓開關切換時，立刻呼叫 API 將狀態送給後端
+async function toggleIslandMode() {
   const checkbox = document.getElementById('islandModeSwitch');
   isWebIslandMode = checkbox.checked;
 
@@ -629,17 +630,47 @@ function toggleIslandMode() {
   document.getElementById('label-grid').classList.toggle('active', !isWebIslandMode);
   document.getElementById('label-island').classList.toggle('active', isWebIslandMode);
 
-  // 如果您後續有在首頁實作 fetchGridStatus()，可以將它寫在這裡：
-  // fetchGridStatus();
+  console.log(isWebIslandMode ? "⚠️ 啟動停電孤島模式" : "🔌 恢復市電供電");
   
-  if (isWebIslandMode) {
-      console.log("⚠️ 啟動停電孤島模式");
-  } else {
-      console.log("🔌 恢復市電供電");
+  // 立刻戳一次 API 更新狀態
+  await fetchGridStatus(); 
+}
+
+
+// 🌟 新增：與 FastAPI 溝通的核心函數
+async function fetchGridStatus() {
+  try {
+    // 呼叫 API 並帶上當前的孤島開關狀態
+    const response = await fetch(`/api/grid_status?web_island_mode_active=${isWebIslandMode}`);
+    const data = await response.json();
+    
+    console.log(`🕒 當前模擬時間: ${data.timestamp} | 狀態: ${data.bess_state} | 電網: ${data.source}`);
+    
+    // TODO: 這裡稍後可以加入更新 Chart.js 圖表與 UI 數字的邏輯
+    
+  } catch (error) {
+    console.error("API 呼叫失敗，請確認 FastAPI 伺服器是否運行中", error);
   }
 }
 
 
+// 🌟 新增：啟動自動步進模擬 (例如每 2 秒推進 15 分鐘)
+let simulationInterval;
+function startSimulation() {
+  // 先停止可能存在的舊計時器
+  if(simulationInterval) clearInterval(simulationInterval);
+  
+  // 每 2000 毫秒 (2秒) 執行一次 fetchGridStatus
+  simulationInterval = setInterval(fetchGridStatus, 2000); 
+  console.log("▶️ 系統模擬已啟動...");
+}
+
+// 🌟 修改：在網頁載入完成時，除了初始化靜態圖表，也啟動動態模擬
+(function boot(){
+  initHome();
+  setupReveal();
+  startSimulation(); // 啟動時間引擎
+})();
 
 /* ============================================================
    網頁滾動動畫與啟動點

@@ -48,9 +48,9 @@ def plot_bess_comparison():
     # 下半部：電池充放電功率 (kW) 比較圖
     # ==========================================
     plt.subplot(2, 1, 2)
-    plt.plot(df_base['power_kw'], label='Baseline (淨功率)', linewidth=2.5, alpha=0.8)
-    plt.plot(df_pso['power_kw'], label='PSO (最佳化排程)', linewidth=2.5, linestyle='--')
-    plt.plot(df_island['power_kw'], label='Island (突發停電強制 3.0kW)', linewidth=3, linestyle=':', color='red')
+    plt.plot(df_base['battery_power_kw'], label='Baseline (淨功率)', linewidth=2.5, alpha=0.8)
+    plt.plot(df_pso['battery_power_kw'], label='PSO (最佳化排程)', linewidth=2.5, linestyle='--')
+    plt.plot(df_island['battery_power_kw'], label='Island (突發停電強制 3.0kW)', linewidth=3, linestyle=':', color='red')
     
     plt.title('⚡ 三階段兵推：電池充放電功率 (kW) 比較', fontsize=16, fontweight='bold')
     plt.ylabel('功率 (kW) [>0 放電 / <0 充電]', fontsize=14)

@@ -357,7 +357,7 @@ async function fetchLiveGridStatus() {
 (async function boot(){
   initChart();
   await preloadSolarCSV(); 
-  setInterval(fetchLiveGridStatus, 1000); 
+  setInterval(fetchLiveGridStatus, 300); 
 })();
 </script>
 </body>

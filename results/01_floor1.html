@@ -6,7 +6,6 @@
 <title>HEMS — 1F 設施監控</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 :root{
@@ -242,6 +241,8 @@ footer a{color:var(--accent); text-decoration:none;}
   HEMS PROTOTYPE — DATA SOURCED FROM API (OpenDSS Engine)
 </footer>
 
+
+
 <script>
 /* ============================================================
    初始化圖表與基礎 UI 設定
@@ -260,15 +261,14 @@ const chartBase = {
   }
 };
 
-// 圖表初始化 (一開始給空陣列，等待 API 餵資料)
+// 圖表初始化
 function initDetail() {
   document.getElementById('detailIcon').innerHTML = ICONS['floor'] || '';
   
   try {
-    // 嘗試檢查是否有 Chart 工具
     if (typeof Chart === 'undefined') {
-      console.warn("⚠️ 警告: Chart.js 尚未載入，圖表將暫時隱藏。但不影響設備矩陣運作！");
-      return; // 提早結束，避免當機
+      console.warn("⚠️ 警告: Chart.js 尚未載入，圖表將暫時隱藏。");
+      return; 
     }
 
     if (charts.detailChart) {
@@ -297,39 +297,25 @@ window.addEventListener('scroll', () => {
 });
 
 /* ============================================================
-   1F 16台設備專屬互動邏輯 
+   1F 17台設備專屬互動邏輯 (注意：1F 其實有 17 個節點喔)
    ============================================================ */
 let floor1DevicesData = [];
-let currentSelectedDeviceId = 'f1_dev_1'; // 預設一開始就選中第一個設備
+let currentSelectedDeviceId = 'f1_dev_1'; 
 
 let deviceHistory = {};
 for(let i = 1; i <= 17; i++) {
   deviceHistory[`f1_dev_${i}`] = { labels: [], data: [] };
 }
 
-// 從 CSV 讀取當前最新的所有設備狀態
-async function loadFloor1DevicesData() {
-  try {
-    const res = await fetch('./data/floor1_devices.csv?t=' + new Date().getTime());
-    if (!res.ok) throw new Error('無法讀取');
-    const text = await res.text();
-    floor1DevicesData = Papa.parse(text.trim(), { header: true, dynamicTyping: true }).data;
-    
-    renderFloor1Devices();
-    updateRightPanel(currentSelectedDeviceId);
-  } catch (error) {
-    console.error("讀取設備資料失敗：", error);
-  }
-}
+// 🌟 刪除了原本的 loadFloor1DevicesData() CSV 讀取函數 🌟
 
-// 渲染左側 16 個按鈕
+// 渲染左側 16+1 個按鈕
 function renderFloor1Devices() {
   const grid = document.getElementById('floor1DeviceGrid');
   grid.innerHTML = floor1DevicesData.map(dev => {
     const is220V = dev.rated_v >= 200;
     const voltBadge = is220V ? `<span style="font-size: 9px; background: rgba(255,90,90,0.15); color: var(--off); border: 1px solid rgba(255,90,90,0.4); padding: 1px 4px; border-radius: 3px; margin-left: 6px;">220V</span>` : '';
     
-    // 如果是當前選中的設備，套用亮框
     const activeClass = dev.id === currentSelectedDeviceId ? 'active-select' : '';
 
     return `
@@ -346,9 +332,7 @@ function renderFloor1Devices() {
 function selectDevice(deviceId) {
   currentSelectedDeviceId = deviceId;
   
-  // 🌟 切換設備時不再清空圖表！而是把該設備在背景記錄的歷史軌跡叫出來
-  if (charts.detailChart) {
-    // 使用展開運算子 [...] 複製記憶體中的陣列，避免連動干擾
+  if (charts.detailChart && deviceHistory[deviceId]) {
     charts.detailChart.data.labels = [...deviceHistory[deviceId].labels];
     charts.detailChart.data.datasets[0].data = [...deviceHistory[deviceId].data];
     charts.detailChart.update();
@@ -357,6 +341,7 @@ function selectDevice(deviceId) {
   renderFloor1Devices();
   updateRightPanel(deviceId);
 }
+
 // 更新右側面板的文字與狀態標籤
 function updateRightPanel(deviceId) {
   const dev = floor1DevicesData.find(d => d.id === deviceId);
@@ -377,7 +362,7 @@ function updateRightPanel(deviceId) {
 }
 
 /* ============================================================
-   ⚡ 動態 API 串接 (每 2 秒向後端要求推進時間並抓資料)
+   ⚡ 全新動態 API 串接 (純 JSON，不讀 CSV)
    ============================================================ */
 async function fetchLiveGridStatus() {
   try {
@@ -390,28 +375,36 @@ async function fetchLiveGridStatus() {
       document.querySelector('.crumb').innerHTML = 
         `主頁 <span style="opacity:.4">/</span> <b>1F 設施</b> <span style="color:var(--accent); margin-left:15px; font-weight:bold;">⚡ LIVE: ${timeOnly}</span>`;
 
-      // 2. 重新讀取最新的 1F 設備狀態
-      await loadFloor1DevicesData();
+      // 🌟 2. 關鍵改變：直接把 API 回傳的 JSON 陣列賦值給全域變數
+      if (data.floor1_devices) {
+        floor1DevicesData = data.floor1_devices;
+        
+        // 3. 直接渲染畫面 (不需要 await 讀檔案了)
+        renderFloor1Devices();
+        updateRightPanel(currentSelectedDeviceId);
 
-      // 🌟 3. 將 16 個設備當下的瓦數，全部寫入背景記憶體中
-      floor1DevicesData.forEach(dev => {
-        let hist = deviceHistory[dev.id];
-        hist.labels.push(timeOnly);
-        hist.data.push(dev.power_w);
+        // 4. 將 17 個設備當下的瓦數，全部寫入背景記憶體中
+        floor1DevicesData.forEach(dev => {
+          let hist = deviceHistory[dev.id];
+          if(hist) { // 防呆保護
+            hist.labels.push(timeOnly);
+            hist.data.push(dev.power_w);
 
-        // 控制只保留最新的 16 個點 (16點 * 15分鐘 = 剛好 4 小時)
-        if (hist.labels.length > 96) {
-          hist.labels.shift();
-          hist.data.shift();
+            // 限制陣列長度，最多保留 96 個點 (剛好一天)
+            if (hist.labels.length > 96) {
+              hist.labels.shift();
+              hist.data.shift();
+            }
+          }
+        });
+
+        // 5. 更新當前選中設備的圖表畫面
+        if (charts.detailChart && deviceHistory[currentSelectedDeviceId]) {
+          const chart = charts.detailChart;
+          chart.data.labels = [...deviceHistory[currentSelectedDeviceId].labels];
+          chart.data.datasets[0].data = [...deviceHistory[currentSelectedDeviceId].data];
+          chart.update();
         }
-      });
-
-      // 🌟 4. 更新當前選中設備的圖表畫面
-      if (charts.detailChart) {
-        const chart = charts.detailChart;
-        chart.data.labels = [...deviceHistory[currentSelectedDeviceId].labels];
-        chart.data.datasets[0].data = [...deviceHistory[currentSelectedDeviceId].data];
-        chart.update();
       }
     }
   } catch (error) {
@@ -425,9 +418,9 @@ async function fetchLiveGridStatus() {
 (function boot(){
   initDetail(); // 先畫好空圖表與標題
   
-  // 立刻抓一次資料把 16 個設備畫出來
-  loadFloor1DevicesData().then(() => {
-    // 接著啟動心跳！每 2000 毫秒(2秒) 呼叫一次 API
+  // 立刻呼叫一次 API 取得第一筆資料並畫出按鈕
+  fetchLiveGridStatus().then(() => {
+    // 接著啟動心跳！每 1000 毫秒(1秒) 呼叫一次 API
     setInterval(fetchLiveGridStatus, 1000); 
   });
 })();
