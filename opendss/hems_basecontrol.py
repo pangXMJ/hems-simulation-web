@@ -1,189 +1,349 @@
 import opendssdirect as dss
 import pandas as pd
+import os
 
-from hems_circuit import build_circuit  #呼叫opendss電路
+from hems_circuit import build_circuit  # 呼叫opendss電路
 
-def run_basecontrol_simulation():
-    """執行未經最佳化的基準測試 (太陽能優先自用 / 淨功率邏輯)"""
-    
+def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1):
+    """
+    執行全日模擬引擎
+    :param mode: 'baseline' (未經最佳化), 'pso' (排程最佳化), 'island' (動態突發停電)
+    :param outage_start_step: 停電開始步數 (0-95)
+    :param outage_end_step: 停電結束步數 (0-95)
+    """
+    # 決定輸出檔案的前綴名稱
+    prefix = mode.capitalize() 
+
     # 取得並建立電路
-    commands = build_circuit()#呼叫build_circuit()的程式。
-    for cmd in commands:#讓cmd去儲存build_circult中每一行的opendss指令
-        dss.Text.Command(cmd)#將cmd中的指令傳給opendss去執行
+    commands = build_circuit()
+    for cmd in commands:
+        dss.Text.Command(cmd)
         if dss.Error.Number() != 0:
             print(f"❌ OpenDSS 編譯錯誤: {dss.Error.Description()} \n👉 出錯指令: {cmd}")
             dss.Error.Number(0)
 
-    print("✅ 基準電路建置完成！開始進行 15 分鐘步進模擬 (basecontrol)...\n")
+    print(f"✅ 基準電路建置完成！開始進行 15 分鐘步進模擬 (模式: {mode.upper()})...\n")
     dss.Text.Command("Set mode=Daily stepsize=15m number=1")
 
     total_steps = 96
-    history_data = []#等等儲存結果的陣列
-    all_violation=[]#儲存電路異常的數值
-    # 🌟 新增：專門用來累積並輸出給前端畫折線圖的電錶陣列
+    
+    # ==========================================
+    # 🌟 歷史資料累積陣列 (儲存 96 步的所有資料)
+    # ==========================================
+    history_data = []
+    all_violation = []
     meters_history_data = []
+    bess_history_data = []
+    
+    # 樓層設備資料累積字典
+    floor_history = {"floor1": [], "floor2": [], "floor3": []}#這是給01~03顯示用的
 
-
-    # 配電盤定義
+    # 配電盤與電錶定義
     panel_configs = {
         "EP": {"bus": "EP_panel", "line": "Line.ATS_to_EP"},
         "L1": {"bus": "panel1F", "line": "Line.home1F"},
         "L2": {"bus": "panel2F", "line": "Line.home2F"},
-        "L3": {"bus": "panel3F", "line": "Line.home3F"}
+        "L3": {"bus": "panel3F", "line": "Line.home3F"}#這是給Panel_Common_Nodes_15m_History.csv產生總覽表用的
     }
 
-    # 電錶定義
     meter_targets = {
-        "總電錶T":"KwhT",
-        "PV電錶": "MeterPV",
-        "A電錶": "KwhA",
-        "B電錶": "KwhB",
-        "C電錶": "KwhC",
-        "D電錶": "KwhD"
-    }
+        "總電錶T":"KwhT", "PV電錶": "MeterPV", "A電錶": "KwhA",
+        "B電錶": "KwhB", "C電錶": "KwhC", "D電錶": "KwhD"
+    }#這是給Panel_Common_Nodes_15m_History.csv產生總覽表用的
 
-    # ==========================================
-    # 🌟 讀取大腦決策需要的資料 (PV 與 Load)
-    # ==========================================
-    df_pv_brain = pd.read_csv(r".\data\sample\pv_curve_15min.csv")
-    pv_w_list = df_pv_brain['pv_kw'].tolist() 
+    # 讀取 PV 與 Load 為了後續作判斷用的
+    df_pv_brain = pd.read_csv(r".\data\sample\pv_curve_15min.csv")# 從sample\pv_curve_15min.csv讀取時間跟pv發電量
+    pv_w_list = df_pv_brain['pv_kw'].tolist() #儲存 時間跟pv發電量
 
+
+    # 從sample\LoadShapes_All_Nodes_15min.csv 讀取所有設備的 消耗功率
     df_loads_brain = pd.read_csv(r".\data\sample\LoadShapes_All_Nodes_15min.csv")
+    
+    #過濾欄位：排除 Time（時間）、Hour（小時）、Minute（分鐘）等時間標籤欄位，只留下純設備名稱的欄位。
     load_cols = [c for c in df_loads_brain.columns if c not in ['Time', 'Hour', 'Minute']]
+  
+    #將所有設備在相同時間點的消耗功率相加（sum(axis=1)），並轉換成 Python 列表（total_load_w_list），代表整個系統在各個時間點的總負載瓦數
     total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()
 
-    try:
-        df_pso = pd.read_csv(r".\data\sample\pso_battery_power.csv")
-        pso_kw_list = df_pso['Power_kW'].tolist()
-        print("✅ 成功載入 PSO 電池排程！")
-    except FileNotFoundError:
-        print("⚠️ 找不到 PSO 檔案，預設全天待機 (0 kW)。")
-        pso_kw_list = [0.0] * total_steps
+    # 如果是 pso 或 island 模式，才讀取 PSO 電池排程，系統會檢查變數 mode。只有當模式為 'pso'（粒子群最佳化演算法模式）或 'island'（孤島/斷網模式）時，才會執行電池排程的讀取。
+    #初始化排程：預先建立一個長度為 total_steps、數值全為 0.0 的列表
+    pso_kw_list = [0.0] * total_steps
+    #檢查變數 mode
+    if mode in ['pso', 'island']:
+        
+        try:
+            df_pso = pd.read_csv(r".\data\sample\pso_battery_power.csv")#閱讀pso的排程資料
+            #讀取 pso_battery_power.csv 檔案，並將其中的 Power_kW（電池功率千瓦值）欄位轉成列表，覆蓋掉原本的預設值
+            pso_kw_list = df_pso['Power_kW'].tolist()
+            print("✅ 成功載入 PSO 電池排程！")
+        except FileNotFoundError:
+            print("⚠️ 找不到 PSO 檔案，退回全天待機 (0 kW)。")
 
+    if len(pv_w_list) < total_steps:
+        pv_w_list.extend([0.0] * (total_steps - len(pv_w_list)))
+    if len(total_load_w_list) < total_steps:
+        total_load_w_list.extend([0.0] * (total_steps - len(total_load_w_list)))
+    if len(pso_kw_list) < total_steps:
+        pso_kw_list.extend([0.0] * (total_steps - len(pso_kw_list)))        
+
+    # 初始狀態：市電供電
+    #在 Python 程式中定義一個布林值變數，將「孤島模式（Island Mode）」設為關閉（False）。
     is_island_mode = False
+    #透過 Python API 向 OpenDSS 模擬引擎發送一段文字指令 修改名為 ATS_to_EP 的線路（Line）物件屬性，將連接 meterA到EP panel的 線路社為導通(將來ATS斷掉的時候不知道meterA會不會記錄到功率數值可以留意一下)
+    dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
 
 
+    DUMP_LOAD_MAX_KW = 2.0
+
+#注意是不是要有跨日模擬（時間重回 00:00）
     for step in range(total_steps):
-        # 1. 處理時間 (15分鐘解析度)
+       # 解決問題 4：時間跨日歸零處理 (% 24)
         current_minute = step * 15
-        h = int(current_minute // 60)
+        h = int((current_minute // 60) % 24) 
         m = int(current_minute % 60)
         time_str = f"{h:02d}:{m:02d}"
 
-        # 2. 抓取狀態與計算淨功率
+
+
+        # ==========================================
+        # 2. 突發停電時間炸彈邏輯 (ATS 控制) 要注意meterA是否記錄得到功率
+        # ==========================================
+        #利用 is_island_mode 變數記錄當前狀態，只在狀態切換的瞬間執行一次 OpenDSS 指令，避免重複發送指令
+        #is_target_outage 是一個布林值變數（Boolean Variable），在程式中代表「當前時間步長是否處於預設的停電事件區間內」。
+        #必須同時滿足兩個條件，才會判定為停電狀態：模擬模式 mode 必須是 'island'（孤島模式）。當前的步長 step 剛好落在設定的停電區間內（從 outage_start_step 開始，到 outage_end_step 結束）。
+
+
+        #時間進入停電區間（is_target_outage 為真）
+        #將 is_island_mode 改為 True，並下達 OpenDSS 指令 enabled=no 切斷 ATS_to_EP 這條市電聯絡線路
+        is_target_outage = (mode == 'island' and outage_start_step <= step < outage_end_step)
+
+        if is_target_outage and not is_island_mode:
+            is_island_mode = True
+            # 1. 真實物理切斷市電
+            dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
+            
+            # 2. 💡 關鍵修正：模擬真實的單相三線式變流器 (L1-N 與 L2-N)
+            # 分別在節點 1 (L1) 與節點 2 (L2) 建立 110V (0.11kV) 電源，並利用 angle=180 錯開相位，穩固中性點！
+            dss.Text.Command("New Vsource.BESS_GFM_L1 phases=1 bus1=EP_panel.1 basekv=0.11 pu=1.0 angle=0 enabled=yes")
+            dss.Text.Command("New Vsource.BESS_GFM_L2 phases=1 bus1=EP_panel.2 basekv=0.11 pu=1.0 angle=180 enabled=yes")
+            print(f"⚠️ [{time_str}] 突發停電！ATS 切斷，啟動 110V/220V 單相三線 Inverter 接管微電網，穩固中性點。")
+            
+        elif not is_target_outage and is_island_mode:
+            is_island_mode = False
+            # 恢復市電，關閉兩組變流器與假負載，解封 PV
+            dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
+            dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
+            dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
+            dss.Text.Command("Edit Load.DumpLoad kW=0.0")
+            dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0") 
+            print(f"🔌 [{time_str}] 市電恢復！結束孤島模式，重新併入大電網。")
+
+        #  初始化電池狀態變數，抓取狀態與計算淨功率
         soc = 0.0
         bess_kw = 0.0
         bess_amp = 0.0
+
+        #嘗試在 OpenDSS 系統中將控制焦點切換到名為 "Storage.Battery_Sys" 的儲能系統物件。如果切換成功（回傳值不為 0），則執行以下資料抓取
+        #抓取 SOC (%stored)：獲取該電池的所有內部變數名稱（AllVariableNames）與數值（AllVariableValues）。
+        #尋找代表電量百分比的 "%stored"，並將其轉為浮點數賦值給 soc
+        #抓取電池功率 (bess_kw)：讀取該元件的總功率（TotalPowers）。通常陣列第一個數值（實功 \(P\)）代表 kW。此處取絕對值（abs），
+        #代表不論充電或放電，只紀錄目前的出力大小。抓取電池電流 (bess_amp)：讀取該元件的電流大小與角度（CurrentsMagAng）
+        #取陣列第一個數值（通常是 A 相或總電流大小），並四捨五入到小數點後兩位。
 
         if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
             var_names = dss.CktElement.AllVariableNames()
             var_values = dss.CktElement.AllVariableValues()
             
-            # 抓取 SoC
+            # 🚨 修正 1：恢復您原本最穩健的 SOC 讀取邏輯
             if "%stored" in var_names:
-                idx = var_names.index("%stored")
-                soc = float(var_values[idx])
+                soc = float(var_values[var_names.index("%stored")])
+            else:
+                soc_str = dss.Properties.Value("%stored")
+                if soc_str:
+                    soc = float(soc_str.replace('%', '').strip())
+            
+            total_powers = dss.CktElement.TotalPowers()
+            if total_powers: 
+                bess_kw = -total_powers[0] 
+            
+            currents_mag = dss.CktElement.CurrentsMagAng()
+            if currents_mag: bess_amp = round(currents_mag[0], 2)
+
+
+        #單位轉換：將預先準備好的太陽能發電量（pv_w_list）與總設備用電負載（total_load_w_list）從瓦特（W）除以 1000 轉換為千瓦（kW）
+
+        #淨功率計算 (net_kw)：公式為 太陽能發電 (PV) - 負載 (Load)。
+        #net_kw > 0（正值 代表供過於求，當前太陽能發電充足，電力有剩餘（通常可供電池充電）
+        #net_kw < 0（負值 代表供不應求，太陽能不夠用，電力有缺口（通常需要靠大電網供電或電池放電支援）。
+
+        pv_kw = pv_w_list[step] / 1000.0   
+        load_kw = total_load_w_list[step] / 1000.0
+        net_kw = pv_kw - load_kw
+
+        # ==========================================
+        # 核心電池充放電控制 (依據 Mode 切換)
+        # 根據當前的電網狀態（正常或停電）以及設定的運作模式（基線模式或演算法模式），動態決定儲能電池（BESS）的充放電行為，並在最後驅動 OpenDSS 進行電力潮流物理計算
+        # ==========================================
+        #電池的額定功率（BATTERY_KWRATED）在此被設定為 5.0 kW，要跟hems buildcircuit的地方一樣，不然模擬結果會不一樣
+        BATTERY_KWRATED = 5.0
+
+        #只要前面的時間炸彈判定當前為停電（is_island_mode 為 True）
+        #無視目前是什麼模式，強制接管電池控制權。將電池設定為外部控制（DispMode=External），並強制以 3.0 kW 的功率進行放電（DISCHARGING），用來撐住微電網內部的緊急用電。
+        if is_island_mode:
+            dss.Text.Command("Edit Storage.Battery_Sys DispMode=External")
+            
+            if net_kw > -0.05: 
+                # 【危機：太陽能發電過剩】
+                available_charge_space = BATTERY_KWRATED
+                if soc >= 99.9: available_charge_space = 0.0 
+                
+                charge_need = abs(net_kw) 
+                
+                # --- 第一道防線：電池最大化吸收 ---
+                actual_charge_kw = min(charge_need, available_charge_space)
+                if actual_charge_kw > 0:
+                    dss.Text.Command(f"Edit Storage.Battery_Sys state=CHARGING kW={round(actual_charge_kw, 2)}")
+                else:
+                    dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+                
+                remaining_excess = charge_need - actual_charge_kw
+                
+                # --- 第二道防線：洩載電阻 (假負載) 吸收 ---
+                actual_dump_kw = min(remaining_excess, DUMP_LOAD_MAX_KW)
+                dss.Text.Command(f"Edit Load.DumpLoad kW={round(actual_dump_kw, 2)}")
+                
+                remaining_excess -= actual_dump_kw
+                
+                # --- 第三道防線：PV 主動降載 ---
+                if remaining_excess < 0.05:
+                    curtailed_pv_kw = load_kw + actual_charge_kw + actual_dump_kw
+                    dss.Text.Command(f"Edit PVSystem.pv_array pmpp={round(curtailed_pv_kw, 2)}")
+                    print(f"   🚨 [{time_str}] PV過剩！充 {round(actual_charge_kw,1)}kW，假負載燒 {round(actual_dump_kw,1)}kW，強制降載 PV 至 {round(curtailed_pv_kw,1)}kW")
+                else:
+                    dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0")
+                    if actual_dump_kw > 0:
+                        print(f"   🔥 [{time_str}] 防線作動！充 {round(actual_charge_kw,1)}kW，假負載消耗 {round(actual_dump_kw,1)}kW。")
+            
+            elif net_kw > 0.05:
+                # 【危機：太陽能不足，需電池放電】
+                dss.Text.Command("Edit Load.DumpLoad kW=0.0") 
+                dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0") 
+                
+                if soc <= 20.0:
+                    dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+                    print(f"   💀 [{time_str}] 電池耗盡！無法支撐負載，微電網崩潰。")
+                else:
+                    discharge_need = net_kw
+                    actual_discharge_kw = min(discharge_need, BATTERY_KWRATED)
+                    if discharge_need > BATTERY_KWRATED:
+                        print(f"   ⚠️ [{time_str}] 過載！缺口 ({round(discharge_need,1)}kW) 超過極限 (5kW)")
+                    dss.Text.Command(f"Edit Storage.Battery_Sys state=DISCHARGING kW={round(actual_discharge_kw, 2)}")
+            else:
+                dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+                dss.Text.Command("Edit Load.DumpLoad kW=0.0")
+                dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0")
+
+
+        #當電網正常且模式為 baseline 時，電池會像「聯絡線平滑控制器」一樣，自動去追蹤系統的淨功率（net_kw = PV - Load，只有當淨功率絕對值大於 0.05 kW 時電池才會動作
+        elif mode == 'baseline':
+            # 【階段一：傳統淨功率追蹤邏輯】
+            dss.Text.Command("Edit Storage.Battery_Sys DispMode=Default")
+            #充電邏輯（net_kw > 0.05)，電力過剩
+            #若電池已飽和（soc >= 99.9%則進入待機（IDLING）。
+            #若未飽和，計算充電量（不超過額定 5kW），並轉換為百分比（%Charge）下達 OpenDSS 充電指令。
+            if net_kw > 0.05:
+                if soc >= 99.9:
+                    dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+                else:
+                    charge_kw = min(net_kw, BATTERY_KWRATED)
+                    charge_pct = round((charge_kw / BATTERY_KWRATED) * 100, 2)
+                    dss.Text.Command(f"Edit Storage.Battery_Sys state=CHARGING %Charge={charge_pct}")
+
+            #放電邏輯（net_kw < -0.05，電力不足）
+            #為保護電池，若電量過低（soc <= 20.0%），強制待機（IDLING）不放電。        
+            elif net_kw < -0.05:
+                if soc <= 20.0:
+                    dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+                else:
+                    discharge_kw = min(abs(net_kw), BATTERY_KWRATED)
+                    dss.Text.Command(f"Edit Storage.Battery_Sys state=DISCHARGING kW={round(discharge_kw, 2)}")
+            else:
+                dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+
+        #【演算法模式】PSO 最佳化排程邏輯 (mode in ['pso', 'island'])
+        #切換為外部控制，並從前面讀取的列表中抓取當前時間點的排程功率
+        #放電（> 0）：排程值為正時，將功率換算為放電百分比（%Discharge）讓電池放電。
+        #充電（< 0）：排程值為負時，取絕對值並換算為充電百分比（%Charge）讓電池充電。
+        #待機（== 0）：排程值為 0 時，電池待機（IDLING）。
+        #問題沒有設計保護程式
+        #程式直接盲目執行了排程數值，缺少了像 baseline 模式一樣的 SOC 安全保護機制（例如：沒檢查 soc <= 20% 是否該停止放電，或 soc >= 100% 是否該停止充電）。
+
+        elif mode in ['pso', 'island']:  
+            dss.Text.Command("edit Storage.Battery_Sys DispMode=External")
+            current_pso_kw = pso_kw_list[step]
+            
+            # 解決問題 3：補上 SOC 安全保護機制
+            if current_pso_kw > 0: # 排程要求放電
+                if soc <= 20.0:
+                    dss.Text.Command("edit Storage.Battery_Sys State=IDLING")
+                else:
+                    pct_discharge = (current_pso_kw / BATTERY_KWRATED) * 100.0
+                    dss.Text.Command(f"edit Storage.Battery_Sys State=DISCHARGING %Discharge={pct_discharge}")
+            elif current_pso_kw < 0: # 排程要求充電
+                if soc >= 99.9:
+                    dss.Text.Command("edit Storage.Battery_Sys State=IDLING")
+                else:
+                    pct_charge = (abs(current_pso_kw) / BATTERY_KWRATED) * 100.0
+                    dss.Text.Command(f"edit Storage.Battery_Sys State=CHARGING %Charge={pct_charge}")
+            else:
+                dss.Text.Command("edit Storage.Battery_Sys State=IDLING")
+
+        dss.Text.Command("Solve")
+
+
+
+        # 再次更新狀態 (抓取 Solve 後的最終結果)
+        if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
+            var_names = dss.CktElement.AllVariableNames()
+            var_values = dss.CktElement.AllVariableValues()
+            
+            if "%stored" in var_names:
+                soc = float(var_values[var_names.index("%stored")])
             else:
                 soc_str = dss.Properties.Value("%stored")
                 if soc_str:
                     soc = float(soc_str.replace('%', '').strip())
 
-            # 抓取即時功率 (kW) 與 電流 (A)，供後續 CSV 輸出使用
             total_powers = dss.CktElement.TotalPowers()
-            if total_powers:
-                bess_kw = abs(total_powers[0])
-            
+            if total_powers: 
+                bess_kw = -total_powers[0] 
             currents_mag = dss.CktElement.CurrentsMagAng()
-            if currents_mag:
-                bess_amp = round(currents_mag[0], 2)
-        
-        pv_kw = pv_w_list[step] / 1000.0   
-        load_kw = total_load_w_list[step] / 1000.0
-        net_kw = pv_kw - load_kw  # 計算淨功率
+            if currents_mag: bess_amp = round(currents_mag[0], 2)
 
-        # 3. ATS 切換邏輯 (狀態機)
-        if soc >= 99.9 and not is_island_mode:
-            is_island_mode = True
-            dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
-            print(f"[{time_str}] 🔋電池滿電！ATS切斷市電，EP盤改由「電池供電」。")
-
-        elif soc <= 20.0 and is_island_mode:
-            is_island_mode = False
-            dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
-            print(f"[{time_str}] ⚠️電池低電量！ATS接回市電，開始充電。")  
+        bess_history_data.append({
+            "Time": time_str,
+            "soc": round(soc, 2),
+            "power_kw": round(bess_kw, 2),
+            "current_a": round(bess_amp, 2)
+        })
 
         # ==========================================
-        # ⚡ 4. 全新電池充放電行為控制 (淨功率追蹤)
-        # ==========================================
-        if is_island_mode:
-            # 停電模式：強制放電給家裡用 (優先度最高)
-            dss.Text.Command("Edit Storage.Battery_Sys %Discharge=60 State=DISCHARGING")
-        else:
-            # 從 PSO 陣列中取出這個時間步的指令 (假設 pso_kw_list 已經讀取好了)
-            current_pso_kw = pso_kw_list[step] 
-
-        if current_pso_kw > 0:
-            # PSO > 0 代表要求放電
-            dss.Text.Command("edit Storage.Battery_Sys State=DISCHARGING")
-            dss.Text.Command(f"edit Storage.Battery_Sys kW={current_pso_kw}")
-            
-        elif current_pso_kw < 0:
-            # PSO < 0 代表要求充電 (注意：寫入 OpenDSS 的 kW 必須是正數，靠 State 來決定方向)
-            dss.Text.Command("edit Storage.Battery_Sys State=CHARGING")
-            dss.Text.Command(f"edit Storage.Battery_Sys kW={abs(current_pso_kw)}")
-                
-        else:
-            # PSO = 0 代表待機
-            dss.Text.Command("edit Storage.Battery_Sys State=IDLING")
-
-        # 5. 執行這 15 分鐘的物理計算 (Solve)
-        dss.Text.Command("Solve")
-
-        if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
-            
-            # 1. 抓取我們「期望」的指令
-            expected_pso = pso_kw_list[step]
-            
-            # 2. 抓取 OpenDSS 「最終決定」的終端實功率 (P) 與 虛功率 (Q)
-            actual_powers = dss.CktElement.Powers()
-            actual_kw = actual_powers[0] if actual_powers else 0.0
-            
-            # 3. 抓取 OpenDSS 內部隱藏的所有變數狀態
-            var_names = dss.CktElement.AllVariableNames()
-            var_values = dss.CktElement.AllVariableValues()
-            
-            # 將兩個陣列打包成字典，方便尋找
-            internal_vars = dict(zip(var_names, var_values))
-            
-            # 提取關鍵的內部判斷依據
-            internal_state = internal_vars.get('State', 0)
-            internal_soc = internal_vars.get('%stored', 0)
-            internal_losses = internal_vars.get('Losses', 0)
-            
-            print(f"🕒 [{time_str}] PSO指令: {expected_pso} kW")
-            print(f"   👉 物理端輸出: {round(actual_kw, 3)} kW (差距: {round(expected_pso - actual_kw, 3)} kW)")
-            print(f"   👉 內部狀態碼 (State): {internal_state} (1=放電, -1=充電, 0=待機)")
-            print(f"   👉 當前深層 SOC: {round(internal_soc, 2)} %")
-            print(f"   👉 內部熱損耗: {round(internal_losses, 3)} kW")
-            print("-" * 40)
-
-        # ==========================================
-        # 🌟 新增：抓取 1F 16 個設備的真實物理狀態，並輸出給網頁前端
-        # ==========================================
-        # 根據 hems_circuit.py 定義的 1F 負載名稱對應表
-        # ==========================================
-        # 🌟 1F 到 3F 所有設備清單設定
+        # 5. 抓取 01~03 樓層設備資料 (並加入 Time)
+        #每一個用電設備都打包成一個 Python 字典（Dictionary）
+        #包含三個核心欄位：id：設備的唯一識別碼（如 f1_dev_1方便資料庫或前端網頁管理
+        #name：設備中文名稱（如 1F 冰箱(EP)）
+        # dss_name：該設備在 OpenDSS 模擬軟體中的精確物件名稱（如 Load.ep_fridge_an，用來下達控制或讀取指令。
         # ==========================================
         floor1_loads = [
-            {"id": "f1_dev_1",  "name": "1F 冰箱(EP)", "dss_name": "Load.ep_fridge_an"},
-            {"id": "f1_dev_2",  "name": "1F 抽水馬達(EP)", "dss_name": "Load.ep_pump"},
-            {"id": "f1_dev_3",  "name": "1F 照明 1(EP)", "dss_name": "Load.ep_1f_lighting1_an"},
-            {"id": "f1_dev_4",  "name": "1F 照明 2(EP)", "dss_name": "Load.ep_1f_lighting2_bn"},
-            {"id": "f1_dev_5",  "name": "1F WiFi(EP)", "dss_name": "Load.ep_1f_wifi_an"},
-            {"id": "f1_dev_6",  "name": "1F 電熱水器(EP)", "dss_name": "Load.ep_1f_waterheater_abn"},
-            {"id": "f1_dev_7",  "name": "1F 廚房專插(EP)", "dss_name": "Load.ep_kitchen_bn"},
-            {"id": "f1_dev_8",  "name": "1F 冷氣(L1)", "dss_name": "Load.l1_airc_abn"},
-            {"id": "f1_dev_9",  "name": "1F 照明 1(L1)", "dss_name": "Load.l1_lighting1_an"},
+            {"id": "f1_dev_1", "name": "1F 冰箱(EP)", "dss_name": "Load.ep_fridge_an"},
+            {"id": "f1_dev_2", "name": "1F 抽水馬達(EP)", "dss_name": "Load.ep_pump"},
+            {"id": "f1_dev_3", "name": "1F 照明 1(EP)", "dss_name": "Load.ep_1f_lighting1_an"},
+            {"id": "f1_dev_4", "name": "1F 照明 2(EP)", "dss_name": "Load.ep_1f_lighting2_bn"},
+            {"id": "f1_dev_5", "name": "1F WiFi(EP)", "dss_name": "Load.ep_1f_wifi_an"},
+            {"id": "f1_dev_6", "name": "1F 電熱水器(EP)", "dss_name": "Load.ep_1f_waterheater_abn"},
+            {"id": "f1_dev_7", "name": "1F 廚房專插(EP)", "dss_name": "Load.ep_kitchen_bn"},
+            {"id": "f1_dev_8", "name": "1F 冷氣(L1)", "dss_name": "Load.l1_airc_abn"},
+            {"id": "f1_dev_9", "name": "1F 照明 1(L1)", "dss_name": "Load.l1_lighting1_an"},
             {"id": "f1_dev_10", "name": "1F 照明 2(L1)", "dss_name": "Load.l1_lighting2_bn"},
             {"id": "f1_dev_11", "name": "1F 電磁爐(L1)", "dss_name": "Load.l1_inductioncooktop_abn"},
             {"id": "f1_dev_12", "name": "1F 插座 1(L1)", "dss_name": "Load.l1_socket1_an"},
@@ -193,17 +353,16 @@ def run_basecontrol_simulation():
             {"id": "f1_dev_16", "name": "1F 插座 5(L1)", "dss_name": "Load.l1_socket5_an"},
             {"id": "f1_dev_17", "name": "1F 插座 6(L1)", "dss_name": "Load.l1_socket6_bn"}
         ]
-
         floor2_loads = [
-            {"id": "f2_dev_1",  "name": "2F 照明 1(EP)", "dss_name": "Load.ep_2f_lighting1_an"},
-            {"id": "f2_dev_2",  "name": "2F 照明 2(EP)", "dss_name": "Load.ep_2f_lighting2_bn"},
-            {"id": "f2_dev_3",  "name": "2F 除濕機(L2)", "dss_name": "Load.l2_dehumidifier_bn"},
-            {"id": "f2_dev_4",  "name": "2F 衛浴 1(L2)", "dss_name": "Load.l2_bathroom1_an"},
-            {"id": "f2_dev_5",  "name": "2F 衛浴 2(L2)", "dss_name": "Load.l2_bathroom2_bn"},
-            {"id": "f2_dev_6",  "name": "2F 冷氣 1(L2)", "dss_name": "Load.l2_airc1_abn"},
-            {"id": "f2_dev_7",  "name": "2F 冷氣 2(L2)", "dss_name": "Load.l2_airc2_abn"},
-            {"id": "f2_dev_8",  "name": "2F 照明 1(L2)", "dss_name": "Load.l2_lighting1_an"},
-            {"id": "f2_dev_9",  "name": "2F 照明 2(L2)", "dss_name": "Load.l2_lighting2_bn"},
+            {"id": "f2_dev_1", "name": "2F 照明 1(EP)", "dss_name": "Load.ep_2f_lighting1_an"},
+            {"id": "f2_dev_2", "name": "2F 照明 2(EP)", "dss_name": "Load.ep_2f_lighting2_bn"},
+            {"id": "f2_dev_3", "name": "2F 除濕機(L2)", "dss_name": "Load.l2_dehumidifier_bn"},
+            {"id": "f2_dev_4", "name": "2F 衛浴 1(L2)", "dss_name": "Load.l2_bathroom1_an"},
+            {"id": "f2_dev_5", "name": "2F 衛浴 2(L2)", "dss_name": "Load.l2_bathroom2_bn"},
+            {"id": "f2_dev_6", "name": "2F 冷氣 1(L2)", "dss_name": "Load.l2_airc1_abn"},
+            {"id": "f2_dev_7", "name": "2F 冷氣 2(L2)", "dss_name": "Load.l2_airc2_abn"},
+            {"id": "f2_dev_8", "name": "2F 照明 1(L2)", "dss_name": "Load.l2_lighting1_an"},
+            {"id": "f2_dev_9", "name": "2F 照明 2(L2)", "dss_name": "Load.l2_lighting2_bn"},
             {"id": "f2_dev_10", "name": "2F 插座 1(L2)", "dss_name": "Load.l2_socket1_an"},
             {"id": "f2_dev_11", "name": "2F 插座 2(L2)", "dss_name": "Load.l2_socket2_bn"},
             {"id": "f2_dev_12", "name": "2F 插座 3(L2)", "dss_name": "Load.l2_socket3_an"},
@@ -212,17 +371,16 @@ def run_basecontrol_simulation():
             {"id": "f2_dev_15", "name": "2F 插座 6(L2)", "dss_name": "Load.l2_socket6_bn"},
             {"id": "f2_dev_16", "name": "2F 插座 7(L2)", "dss_name": "Load.l2_socket7_an"}
         ]
-
         floor3_loads = [
-            {"id": "f3_dev_1",  "name": "3F 洗衣機(EP)", "dss_name": "Load.ep_washer_an"},
-            {"id": "f3_dev_2",  "name": "3F 烘衣機(EP)", "dss_name": "Load.ep_dryer_bn"},
-            {"id": "f3_dev_3",  "name": "3F 加壓馬達(EP)", "dss_name": "Load.boosterpump_abn"},
-            {"id": "f3_dev_4",  "name": "3F 照明 1(EP)", "dss_name": "Load.ep_3f_lighting1_an"},
-            {"id": "f3_dev_5",  "name": "3F 照明 2(EP)", "dss_name": "Load.ep_3f_lighting2_bn"},
-            {"id": "f3_dev_6",  "name": "3F 冷氣(L3)", "dss_name": "Load.l3_airc_abn"},
-            {"id": "f3_dev_7",  "name": "3F 照明 1(L3)", "dss_name": "Load.l3_lighting1_an"},
-            {"id": "f3_dev_8",  "name": "3F 照明 2(L3)", "dss_name": "Load.l3_lighting2_bn"},
-            {"id": "f3_dev_9",  "name": "3F 插座 1(L3)", "dss_name": "Load.l3_socket1_an"},
+            {"id": "f3_dev_1", "name": "3F 洗衣機(EP)", "dss_name": "Load.ep_washer_an"},
+            {"id": "f3_dev_2", "name": "3F 烘衣機(EP)", "dss_name": "Load.ep_dryer_bn"},
+            {"id": "f3_dev_3", "name": "3F 加壓馬達(EP)", "dss_name": "Load.boosterpump_abn"},
+            {"id": "f3_dev_4", "name": "3F 照明 1(EP)", "dss_name": "Load.ep_3f_lighting1_an"},
+            {"id": "f3_dev_5", "name": "3F 照明 2(EP)", "dss_name": "Load.ep_3f_lighting2_bn"},
+            {"id": "f3_dev_6", "name": "3F 冷氣(L3)", "dss_name": "Load.l3_airc_abn"},
+            {"id": "f3_dev_7", "name": "3F 照明 1(L3)", "dss_name": "Load.l3_lighting1_an"},
+            {"id": "f3_dev_8", "name": "3F 照明 2(L3)", "dss_name": "Load.l3_lighting2_bn"},
+            {"id": "f3_dev_9", "name": "3F 插座 1(L3)", "dss_name": "Load.l3_socket1_an"},
             {"id": "f3_dev_10", "name": "3F 插座 2(L3)", "dss_name": "Load.l3_socket2_bn"},
             {"id": "f3_dev_11", "name": "3F 插座 3(L3)", "dss_name": "Load.l3_socket3_an"},
             {"id": "f3_dev_12", "name": "3F 插座 4(L3)", "dss_name": "Load.l3_socket4_bn"},
@@ -231,56 +389,45 @@ def run_basecontrol_simulation():
             {"id": "f3_dev_15", "name": "3F 插座 7(L3)", "dss_name": "Load.l3_socket7_an"},
             {"id": "f3_dev_16", "name": "3F 插座 8(L3)", "dss_name": "Load.l3_socket8_bn"}
         ]
-# 將三層樓打包，準備自動化批次處理
+        #將 floor1_loads、floor2_loads、floor3_loads 三個列表，統一打包進一個名為 all_floors_config 的大列表中。
         all_floors_config = [
             {"floor_name": "floor1", "load_list": floor1_loads},
             {"floor_name": "floor2", "load_list": floor2_loads},
             {"floor_name": "floor3", "load_list": floor3_loads}
         ]
 
-        bess_data = [{
-            "time": time_str,
-            "soc": round(soc, 2),
-            "power_kw": round(bess_kw, 2),
-            "current_a": round(bess_amp, 2)
-        }]
+        #雙重嵌入式迴圈（Nested Loop，利用前面定義好的樓層設備對照表，逐一向 OpenDSS 引擎撈取大樓內每個電器在當前時間點（Step）的真實電力數據（包含功率、電流、電壓、運作狀態）
+        #外部迴圈：遍歷每一個樓層（floor1 ➔ floor2 ➔ floor3）。內部迴圈：遍歷該樓層裡面的每一個設備。
+        #計算消耗瓦數 (watts)：讀取該元件的總功率（TotalPowers()），取第一項（kW 實功）的絕對值，並乘以 1000 轉回瓦特 (W)。
+        #讀取電流 (amps)：讀取電流大小（CurrentsMagAng()，取第一項作為該設備的線電流（安培 A）。
+        #判定開關狀態 (status_code)：如果計算出的瓦數大於 1.0 W，判定該電器正在開機運作中（1）；小於等於 1.0 W 則判定為關機或待機（0）
+        #讀取額定電壓 (rated_v)：從 OpenDSS 讀取該負載設定的額定電壓（kV），並乘以 1000 轉換為伏特 (V)（例如 0.11 kV ➔ 110V、0.22 kV ➔ 220V）。
 
-        bess_csv_path = rf"C:\projects\hems-simulation-web\data\sample\bess_status.csv"
-        pd.DataFrame(bess_data).to_csv(bess_csv_path, index=False, encoding='utf-8-sig')
-
-
-        # 批次處理每一層樓
         for floor in all_floors_config:
-            device_data = []
-            
             for dev in floor["load_list"]:
-                # 將 OpenDSS 內部游標指向該設備
                 dss.Circuit.SetActiveElement(dev["dss_name"])
-                
-                # 計算功率與電流
                 total_powers = dss.CktElement.TotalPowers()
                 kw = abs(total_powers[0]) if total_powers else 0.0
                 watts = kw * 1000.0
-
                 currents = dss.CktElement.CurrentsMagAng()
                 amps = currents[0] if currents else 0.0
                 status_code = 1 if watts > 1.0 else 0
-
-                # 取得「額定電壓」
                 rated_kv = float(dss.Properties.Value("kV"))
                 rated_v = rated_kv * 1000.0
-
-                # 計算「真實電壓」
-                if status_code == 1 and amps > 0:
-                    real_v = watts / amps
-                else:
+                #動態電壓計算邏輯 (real_v)
+                if status_code == 1 and amps > 0:#當設備有運作且有電流時
+                    real_v = watts / amps #功率/電流 反推電壓
+                else:# 當設備關機或沒電流時：透過讀取節點電壓陣列（VoltagesMagAng()）來獲取
                     voltages = dss.CktElement.VoltagesMagAng()
                     if rated_v >= 200 and len(voltages) >= 3:
-                        real_v = voltages[0] + voltages[2]
+                        real_v = voltages[0] + voltages[2]#將第一相和第二相的電壓大小相加（voltages[0] + voltages[2]），還原出線電壓
                     else:
-                        real_v = voltages[0] if len(voltages) >= 1 else rated_v
+                        real_v = voltages[0] if len(voltages) >= 1 else rated_v#備援機制：若都撈不到電票數據，則退回使用預設的額定電壓（rated_v）。
 
-                device_data.append({
+                # 將帶有時間的資料，累積放入該樓層的歷史陣列中
+                #程式將處理好、帶有當前時間標記（time_str）的精準數據，以字典形式 .append() 到 floor_history 之中對應的樓層鍵值（Key）下方。
+                floor_history[floor["floor_name"]].append({
+                    "Time": time_str,
                     "id": dev["id"],
                     "name": dev["name"],
                     "status_code": status_code,
@@ -290,173 +437,120 @@ def run_basecontrol_simulation():
                     "current_a": round(amps, 2)
                 })
 
-            # 將該樓層的數據輸出為獨立的 CSV 檔
-            df_devices = pd.DataFrame(device_data)
-            output_path = rf"C:\projects\hems-simulation-web\data\sample\{floor['floor_name']}_devices.csv"
-            df_devices.to_csv(output_path, index=False, encoding='utf-8-sig')
 
 
+        #----------------------------------------------------------------------------------------
+        #這段程式碼的主要功能是在每個模擬時間點，
+        #進行電力系統的異常檢測（違規判定）並動態撈取各大樓配電盤（Panel）匯流排的實際電壓與線路總電流
+        #最後將這些關鍵資訊整合，生成一筆全系統的歷史摘要紀錄（Summary Row）
+        #-----------------------------------------------------------------------------------------
 
-        #執行異常檢測
+        # 異常檢測，呼叫一個外部函式 check_system_violations，傳入目前時間，如果檢測到異常（current_violations 不為空，就把這些異常事件全部追加到總紀錄列表 all_violation 中
         current_violations = check_system_violations(time_str)
         if current_violations:
             all_violation.extend(current_violations)
         
-        # 6. 整理數據字典
+        # 紀錄歷史摘要表
         row_dict = {"Time": time_str, "Hour": h, "Minute": m}
         row_dict["電池_SOC(%)"] = round(soc, 2)
         row_dict["供電模式"] = "電池供電" if is_island_mode else "市電供電"
   
-
-        # ==========================================
-        # 抓取各配電盤的電壓與電流
-        # ==========================================
-
+        # 抓取電壓電流
         for p_name, config in panel_configs.items():
-
-            # [電壓]
             dss.Circuit.SetActiveBus(config["bus"])
             nodes = dss.Bus.Nodes()
             v_mag_ang = dss.Bus.VMagAngle()
             v_dict = {node: v_mag_ang[i * 2] for i, node in enumerate(nodes)}
-            v1 = round(v_dict.get(1, 0), 3)
-            v2 = round(v_dict.get(2, 0), 3)
+            row_dict[f"{p_name}_匯流排電壓_L1(V)"] = round(v_dict.get(1, 0), 3)
+            row_dict[f"{p_name}_匯流排電壓_L2(V)"] = round(v_dict.get(2, 0), 3)
 
-            # [電流]
+            #一旦停電，線路斷開，電流就會變成 0；在此時主動切換去讀取 Inv_AC_Main，抓到微電網在孤島模式下，電池到底送了多少電流給 EP 盤的設備
             line_name = config["line"]
             if p_name == "EP":
                 dss.Circuit.SetActiveElement("Line.ATS_to_EP")
-                if not dss.CktElement.Enabled():
-                    line_name = "Line.Inv_AC_Main"
-
+                if not dss.CktElement.Enabled(): line_name = "Line.Inv_AC_Main"
             dss.Circuit.SetActiveElement(line_name)
             curr_mag_ang = dss.CktElement.CurrentsMagAng()
-            i1 = round(curr_mag_ang[0], 2) if len(curr_mag_ang) > 0 else 0
-            i2 = round(curr_mag_ang[2], 2) if len(curr_mag_ang) > 2 else 0
+            row_dict[f"{p_name}_總電流_L1(A)"] = round(curr_mag_ang[0], 2) if len(curr_mag_ang) > 0 else 0
+            row_dict[f"{p_name}_總電流_L2(A)"] = round(curr_mag_ang[2], 2) if len(curr_mag_ang) > 2 else 0
 
-            # 寫入字典 (區分 L1 與 L2)
-            row_dict[f"{p_name}_匯流排電壓_L1(V)"] = v1
-            row_dict[f"{p_name}_匯流排電壓_L2(V)"] = v2
-            row_dict[f"{p_name}_總電流_L1(A)"] = i1
-            row_dict[f"{p_name}_總電流_L2(A)"] = i2
 
-        # 抓取各電錶當前的累積用電量 (kWh)
+        #利用 OpenDSS 的電錶物件（EnergyMeter，撈取各監測點的當前累積用電量（kWh）
+        #將這些數據同步更新到整體的歷史摘要表（history_data）與獨立的電錶歷史紀錄（meters_history_data中
+        #抓取電錶
         meter_row = {"Time": time_str}
-
         for ch_name, dss_name in meter_targets.items():
             dss.Meters.Name(dss_name)
             regs = dss.Meters.RegisterValues()
             names = dss.Meters.RegisterNames()
             reg_map = dict(zip(names, regs)) if regs else {}
-            # 抓取 kWh，保留小數點後 2 位
             kwh = round(reg_map.get('kWh', 0), 5)
             row_dict[f"{ch_name}_當前累積功率(kWh)"] = kwh
-
-            # 寫入獨立的 CSV 用字典
             meter_row[f"{ch_name}_當前累積功率(kWh)"] = kwh
 
-        #獨立的電錶值
         meters_history_data.append(meter_row)
-        # 將這一列整合完畢的資料放入總表中
         history_data.append(row_dict)
 
-        meters_csv_path = rf"C:\projects\hems-simulation-web\data\sample\All_meter.csv"
-        pd.DataFrame(meters_history_data).to_csv(meters_csv_path, index=False, encoding='utf-8-sig')
-
-    # 迴圈結束，轉換為 DataFrame
-    df_history = pd.DataFrame(history_data)
-    df_warning=pd.DataFrame(all_violation)
-
-    print("=== 模擬完成！匯出寬表格摘要 (前 5 筆) ===")
-    print(df_history.head(5).to_string(index=False))
-
-    return df_history,df_warning
-
-
-
-
-
-# ==========================================
-# 檢查線路與變壓器是否過載 (Thermal Overload Check)
-# ==========================================
-# First() 會將第一個 PD (Power Delivery) 元件設為 Active    
-#OpenDSS 的核心是用 Delphi 語言撰寫的，為了讓 MATLAB、Python、C# 等各種語言都能順利呼叫它，它採用了一種叫做狀態機（State Machine）的設計。
-#當呼叫 dss.PDElements.First() 時，OpenDSS 在底層會做兩件事：
-#把系統指標指向第一個 PDEntity（例如 Line、Transformer），讓它成為「Active（當前啟動）」的元件。
-#回傳一個整數（通常是 1）。如果系統裡完全沒有元件，它會回傳 0。
-#讀取名稱是用 dss.CktElement.Name()，裡面完全不需要帶入 idx。因為 OpenDSS 已經知道「現在 Active 的是誰」，它會直接把當前元件的資料吐給你。
-
-
-def check_system_violations(time_str):
-    """
-    執行系統體檢：檢查「元件熱過載 (Thermal Overload)」與「節點電壓越限 (Voltage Violations)」
-    """
-    violations = []
-
     # ==========================================
-    # 1. 檢查元件是否過載 (Thermal Overload Check)
+    # 6. 一次性輸出全日所有資料表 (加入前綴)
     # ==========================================
-    # 將游標移至第一個 PD Element (Power Delivery Element: 線路、變壓器等)
-    idx = dss.PDElements.First() 
+    base_path = r".\data\sample"
+    os.makedirs(base_path, exist_ok=True)
     
-    while idx > 0:
-        element_name = dss.CktElement.Name().lower() # 取得元件名稱[cite: 2]
-        norm_amps = dss.CktElement.NormalAmps()          # 取得元件安培上限[cite: 2]
-        
-        # 只有設定了額定上限的元件才需要檢查
-        if norm_amps > 0:
-            # 取得該元件所有端子的電流大小與角度[cite: 2]
-            currents = dss.CktElement.CurrentsMagAng() 
-            # 陣列切片：只取出實部 (大小 Magnitude)[cite: 2]
-            mags = currents[0::2]  
-            
-            if mags:
-                # 🌟 [動態過載判定] 區分變壓器與一般線路的取值方式
-                if "transformer" in element_name:
-                    # 變壓器只看 Terminal 1 (一次側高壓端) 的第一相電流
-                    max_current = mags[0]
-                else:
-                    # 一般線路看所有導線中的最大電流
-                    max_current = max(mags)
+    # 輸出電池狀態與電錶總覽
+    pd.DataFrame(bess_history_data).to_csv(os.path.join(base_path, f"{prefix}_bess_status.csv"), index=False, encoding='utf-8-sig')
+    pd.DataFrame(meters_history_data).to_csv(os.path.join(base_path, f"{prefix}_All_meter.csv"), index=False, encoding='utf-8-sig')
 
-                # 判定是否超過上限
+    # 輸出 01~03 樓層設備資料 (96步完整版)
+    for f_name, f_data in floor_history.items():
+        pd.DataFrame(f_data).to_csv(os.path.join(base_path, f"{prefix}_{f_name}_devices.csv"), index=False, encoding='utf-8-sig')
+
+    df_history = pd.DataFrame(history_data)
+    df_warning = pd.DataFrame(all_violation)
+
+    print(f"=== {prefix} 模式模擬完成！匯出寬表格摘要 ===")
+    print("PVSystems 列表:", dss.PVsystems.AllNames())
+    print("Generators 列表:", dss.Generators.AllNames())
+
+    return df_history, df_warning
+
+# (下方 check_system_violations 函式維持原樣，無需變更)
+def check_system_violations(time_str):
+    # ... [與您原本提供的程式碼完全相同，無需變更] ...
+    violations = []
+    idx = dss.PDElements.First() 
+    while idx > 0:
+        element_name = dss.CktElement.Name().lower()
+        norm_amps = dss.CktElement.NormalAmps() 
+        if norm_amps > 0:
+            currents = dss.CktElement.CurrentsMagAng() 
+            mags = currents[0::2]  
+            if mags:
+                if "transformer" in element_name: max_current = mags[0]
+                else: max_current = max(mags)
+
                 if max_current > norm_amps:
                     violations.append({
                         "Time": time_str,
                         "Violation_Type": "Thermal_Overload",
-                        "Element": dss.CktElement.Name(), #[cite: 2]
+                        "Element": dss.CktElement.Name(),
                         "Value": round(max_current, 2),
                         "Limit": round(norm_amps, 2),
                         "Message": f"過載！負載率為 {round((max_current/norm_amps)*100, 1)}%"
                     })
-        
-        # 移至下一個元件[cite: 2]
         idx = dss.PDElements.Next() 
 
-    # ==========================================
-    # 2. 檢查全系統節點電壓是否異常 (Voltage Violation Check)
-    # ==========================================
-    node_names = dss.Circuit.AllNodeNames() # 取得節點名稱[cite: 2]
-    pu_voltages = dss.Circuit.AllBusMagPu() # 取得 OpenDSS 預設 PU 值[cite: 2]
-    act_voltages = dss.Circuit.AllBusVMag() # 取得實際電壓大小 (Volts)[cite: 2]
+    node_names = dss.Circuit.AllNodeNames()
+    pu_voltages = dss.Circuit.AllBusMagPu()
+    act_voltages = dss.Circuit.AllBusVMag()
 
-    # 確保三個陣列長度一致，進行迭代
     for node, pu_v, act_v in zip(node_names, pu_voltages, act_voltages):
-        if act_v > 10.0:  # 忽略沒接電的空節點 (過濾電壓接近0的雜訊)
+        if act_v > 10.0: 
+            if 90 <= act_v <= 140: base_V = 110.0
+            elif 190 <= act_v <= 250: base_V = 220.0
+            else: base_V = act_v / pu_v if pu_v > 0 else 1.0
             
-            # 🌟 [動態基準電壓分類器]
-            if 90 <= act_v <= 140:
-                base_V = 110.0  # 判定為單相 110V 系統
-            elif 190 <= act_v <= 250:
-                base_V = 220.0  # 判定為單相 220V 系統
-            else:
-                # 若找不到歸屬，退回 OpenDSS 原始的計算基準
-                base_V = act_v / pu_v if pu_v > 0 else 1.0
-            
-            # 計算我們工程師自己定義的「真實標么值 (Real PU)」
             real_pu = act_v / base_V
-
-            # 檢查是否落在 0.95 ~ 1.05 pu 之間 (ANSI C84.1 Range A)
             if real_pu < 0.95 or real_pu > 1.05:
                 violations.append({
                     "Time": time_str,
@@ -466,6 +560,4 @@ def check_system_violations(time_str):
                     "Limit": "0.95 ~ 1.05 pu",
                     "Message": f"電壓越限！({int(base_V)}V系統異常)"
                 })
-
     return violations
-    

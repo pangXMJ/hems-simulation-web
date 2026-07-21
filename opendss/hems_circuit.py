@@ -4,6 +4,7 @@ import os
 
 
 def build_circuit():
+    
     """建立 15 分鐘解析度的電網實體電路，並回傳指令清單"""
     
     dss.Basic.ClearAll()
@@ -427,3 +428,17 @@ def build_circuit():
     ])
 
     return commands
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HEMS — 2F 設施監控</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{
+  --bg:#050506;
+  --bg-2:#0a0a0b;
+  --panel:#0f0f11;
+  --card:#121214;
+  --line:rgba(255,255,255,0.09);
+  --line-soft:rgba(255,255,255,0.05);
+  --white:#f3f2ee;
+  --dim:#8a8a90;
+  --faint:#4d4d52;
+  --accent:#c8ff4d;
+  --accent-dim:rgba(200,255,77,0.10);
+  --accent-line:rgba(200,255,77,0.35);
+  --off:#ff5a5a;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--white);
+  font-family:'Inter','Noto Sans TC',sans-serif;
+  font-weight:400;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.display{font-family:'Bebas Neue','Noto Sans TC',sans-serif; letter-spacing:0.5px;}
+.mono{font-family:'Space Mono',monospace;}
+.tc{font-family:'Noto Sans TC',sans-serif;}
+a{color:inherit;}
+::selection{background:var(--accent); color:#050506;}
+
+/* ---------- nav ---------- */
+.topbar{
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:26px 5vw;
+  transition:all .4s ease;
+  border-bottom:1px solid transparent;
+}
+.topbar.scrolled{
+  background:rgba(5,5,6,0.82);
+  backdrop-filter:blur(14px);
+  padding:16px 5vw;
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:center; gap:11px; cursor:pointer;}
+.brand .ring{
+  width:22px; height:22px; border-radius:50%;
+  border:2px solid var(--accent);
+  position:relative;
+}
+.brand .ring::after{content:'';position:absolute; inset:5px; border-radius:50%; background:var(--accent); opacity:.9;}
+.brand span{font-family:'Bebas Neue'; font-size:20px; letter-spacing:2px;}
+.nav-right{display:flex; align-items:center; gap:34px;}
+.crumb{color:var(--dim); font-size:11px; letter-spacing:1.5px; text-transform:uppercase; font-family:'Space Mono',monospace;}
+.crumb b{color:var(--accent); font-weight:400;}
+
+/* ---------- section shell ---------- */
+.section{max-width:1360px; margin:0 auto; padding:150px 5vw;}
+.section.tight{padding-top:80px;}
+
+.card{background:var(--card); border:1px solid var(--line); border-radius:2px; padding:30px;}
+.grid-2{display:grid; grid-template-columns:1.35fr 1fr; gap:1px; background:var(--line);}
+.grid-2 > .card{border-radius:0; border:none;}
+@media(max-width:900px){.grid-2{grid-template-columns:1fr;}}
+
+.spec-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin-bottom:8px;}
+canvas{max-width:100%;}
+.chart-label{font-family:'Space Mono'; font-size:10.5px; letter-spacing:2px; color:var(--faint); text-transform:uppercase; margin:0 0 18px;}
+
+.badge{font-family:'Space Mono'; font-size:11px; letter-spacing:1px; padding:5px 12px; border:1px solid; text-transform:uppercase;}
+.badge-on{color:var(--accent); border-color:var(--accent-line); background:var(--accent-dim);}
+.badge-off{color:var(--off); border-color:rgba(255,90,90,0.35); background:rgba(255,90,90,0.08);}
+
+/* buttons */
+.btn-line{
+  all:unset; cursor:pointer; display:inline-flex; align-items:center; gap:10px;
+  font-family:'Space Mono'; font-size:11.5px; letter-spacing:2px; text-transform:uppercase;
+  color:var(--dim); padding-bottom:6px; border-bottom:1px solid var(--line);
+  transition:.25s;
+}
+.btn-line:hover{color:var(--white); border-color:var(--accent);}
+.btn-line:hover .arrow{transform:translateX(4px);}
+.arrow{transition:.25s; display:inline-block;}
+
+/* ---------- detail pages ---------- */
+.detail-page{display:block;}
+.detail-hero{
+  min-height:56vh; display:flex; align-items:center; padding:120px 5vw 60px;
+  background:radial-gradient(ellipse 70% 70% at 70% 40%, rgba(200,255,77,0.05), transparent 70%);
+  border-bottom:1px solid var(--line);
+}
+.detail-hero-inner{display:grid; grid-template-columns:1fr 1.4fr; gap:60px; align-items:center; width:100%; max-width:1360px; margin:0 auto;}
+.detail-icon{display:flex; align-items:center; justify-content:center;}
+.detail-title-block .spec-label{margin-bottom:16px;}
+.detail-title-block h1{font-family:'Bebas Neue'; font-size:clamp(48px,7vw,110px); margin:0; line-height:0.9;}
+@media(max-width:900px){.detail-hero-inner{grid-template-columns:1fr;}}
+
+.spec-sheet{border-top:1px solid var(--line);}
+.spec-sheet-row{
+  display:flex; align-items:baseline; justify-content:space-between;
+  padding:22px 0; border-bottom:1px solid var(--line-soft);
+}
+.spec-sheet-row .k{font-family:'Space Mono'; font-size:11px; letter-spacing:2px; color:var(--faint); text-transform:uppercase;}
+.spec-sheet-row .v{font-family:'Space Mono'; font-size:22px; font-weight:700;}
+
+footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); font-size:11.5px; text-align:center; font-family:'Space Mono';}
+footer a{color:var(--accent); text-decoration:none;}
+
+/* ---------- 2F 設備矩陣面板 ---------- */
+.device-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+@media(max-width: 600px) {
+  .device-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.device-btn {
+  all: unset;
+  cursor: pointer;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 16px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.25s ease;
+}
+.device-btn:hover { border-color: var(--dim); }
+.device-btn.active-select { border-color: var(--accent); background: var(--card); }
+
+.status-indicator {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
+  transition: all 0.3s ease;
+}
+
+.device-btn.state-on .status-indicator {
+  background: var(--accent);
+  color: #050506;
+  box-shadow: 0 0 12px rgba(200,255,77,0.25);
+}
+.device-btn.state-on .device-name { color: var(--white); }
+
+.device-btn.state-off .status-indicator {
+  background: #1c1c1f;
+  color: var(--dim);
+  border: 1px solid var(--line);
+}
+.device-btn.state-off .device-name { color: var(--faint); }
+
+.device-name {
+  font-size: 13px; font-weight: 500; transition: color 0.3s;
+}
+</style>
+</head>
+<body>
+
+<div class="topbar" id="topbar">
+  <div class="brand" onclick="window.location.href='hems_index.html'">
+    <div class="ring"></div>
+    <span>HEMS</span>
+  </div>
+  <div class="nav-right">
+    <div class="crumb">主頁 <span style="opacity:.4">/</span> <b>2F 設施</b></div>
+  </div>
+</div>
+
+<div id="detail-view" class="detail-page active">
+  <section class="detail-hero">
+    <div class="detail-hero-inner">
+      <div class="detail-icon" id="detailIcon"></div>
+      <div class="detail-title-block">
+        <button class="btn-line" onclick="window.location.href='hems_index.html'"><span class="arrow">←</span> BACK TO HOME</button>
+        <div class="spec-label" style="margin-top:26px;" id="detailEyebrow">DEVICE / FLOOR2</div>
+        <h1 id="detailTitle">2F 設備總覽</h1>
+        <div style="margin-top:20px;"><span class="badge badge-on" id="detailBadge">ON</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="section tight">
+    <div class="grid-2">
+      <!-- 左側：2F 設備矩陣 -->
+      <div class="card">
+        <p class="chart-label">2F 設備矩陣 (16 個節點)</p>
+        <div class="device-grid" id="floor2DeviceGrid">
+          <!-- JS 動態生成 -->
+        </div>
+      </div>
+
+      <!-- 右側：數據面板與動態圖表 -->
+      <div class="card" id="selectedDeviceCard">
+        <p class="chart-label">選定設備即時數據</p>
+        <h2 id="selDeviceName" style="font-family:'Noto Sans TC'; margin:0 0 12px; font-size:24px;">請選擇左側設備</h2>
+        <div style="margin-bottom:24px;">
+          <span class="badge badge-off" id="selDeviceStatus">--</span>
+        </div>
+        
+        <div class="spec-sheet" style="margin-bottom: 30px;">
+          <div class="spec-sheet-row">
+            <span class="k">功率 POWER</span>
+            <span class="v" id="detailPower">-- W</span>
+          </div>
+          <div class="spec-sheet-row">
+            <span class="k">電壓 VOLTAGE</span>
+            <span class="v" id="detailVoltage">-- V</span>
+          </div>
+          <div class="spec-sheet-row">
+            <span class="k">電流 CURRENT</span>
+            <span class="v" id="detailCurrent">-- A</span>
+          </div>
+        </div>
+
+        <p class="chart-label">即時功率趨勢 (W)</p>
+        <canvas id="detailChart" height="190"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  HEMS PROTOTYPE — DATA SOURCED FROM API (OpenDSS Engine)
+</footer>
+
+<script>
+/* ============================================================
+   初始化圖表與基礎 UI 設定
+   ============================================================ */
+const ICONS = {
+  floor: `<svg width="220" height="220" viewBox="0 0 100 100" fill="none"><rect x="15" y="35" width="70" height="55" stroke="#c8ff4d" stroke-width="1.5"/><polygon points="10,38 50,10 90,38" stroke="#c8ff4d" stroke-width="1.5" fill="none"/><rect x="45" y="60" width="14" height="25" fill="#c8ff4d" opacity="0.45"/><rect x="25" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/><rect x="61" y="48" width="14" height="14" stroke="#c8ff4d" stroke-width="1"/></svg>`
+};
+
+let charts = {};
+const chartBase = {
+  responsive: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+    y: { ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+  }
+};
+
+// 圖表初始化 (一開始給空陣列，等待 API 餵資料)
+function initDetail() {
+  document.getElementById('detailIcon').innerHTML = ICONS['floor'] || '';
+  
+  try {
+    // 嘗試檢查是否有 Chart 工具
+    if (typeof Chart === 'undefined') {
+      console.warn("⚠️ 警告: Chart.js 尚未載入，圖表將暫時隱藏。但不影響設備矩陣運作！");
+      return; // 提早結束，避免當機
+    }
+
+    if (charts.detailChart) {
+      charts.detailChart.destroy();
+    }
+    
+    charts.detailChart = new Chart(document.getElementById('detailChart'), {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          data: [], 
+          borderColor: '#c8ff4d', backgroundColor: 'rgba(200,255,77,0.06)', 
+          fill: true, tension: 0.3, pointRadius: 2, borderWidth: 1.5
+        }]
+      },
+      options: chartBase
+    });
+  } catch (error) {
+    console.error("圖表初始化失敗：", error);
+  }
+}
+
+window.addEventListener('scroll', () => {
+  document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 40);
+});
+
+/* ============================================================
+   2F 16台設備專屬互動邏輯 
+   ============================================================ */
+let floor2DevicesData = [];
+let currentSelectedDeviceId = 'f2_dev_1'; // 預設一開始就選中第一個設備
+
+let deviceHistory = {};
+for(let i = 1; i <= 16; i++) {
+  deviceHistory[`f2_dev_${i}`] = { labels: [], data: [] };
+}
+
+// 從 CSV 讀取當前最新的所有設備狀態
+async function loadFloor2DevicesData() {
+  try {
+    const res = await fetch('./data/floor2_devices.csv?t=' + new Date().getTime());
+    if (!res.ok) throw new Error('無法讀取');
+    const text = await res.text();
+    floor2DevicesData = Papa.parse(text.trim(), { header: true, dynamicTyping: true }).data;
+    
+    renderFloor2Devices();
+    updateRightPanel(currentSelectedDeviceId);
+  } catch (error) {
+    console.error("讀取設備資料失敗：", error);
+  }
+}
+
+// 渲染左側 16 個按鈕
+function renderFloor2Devices() {
+  const grid = document.getElementById('floor2DeviceGrid');
+  grid.innerHTML = floor2DevicesData.map(dev => {
+    const is220V = dev.rated_v >= 200;
+    const voltBadge = is220V ? `<span style="font-size: 9px; background: rgba(255,90,90,0.15); color: var(--off); border: 1px solid rgba(255,90,90,0.4); padding: 1px 4px; border-radius: 3px; margin-left: 6px;">220V</span>` : '';
+    
+    // 如果是當前選中的設備，套用亮框
+    const activeClass = dev.id === currentSelectedDeviceId ? 'active-select' : '';
+
+    return `
+      <button class="device-btn ${dev.status_code === 1 ? 'state-on' : 'state-off'} ${activeClass}" 
+              onclick="selectDevice('${dev.id}')" id="btn_${dev.id}">
+        <div class="status-indicator">${dev.status_code === 1 ? 'ON' : 'OFF'}</div>
+        <div class="device-name" style="display:flex; align-items:center;">${dev.name} ${voltBadge}</div>
+      </button>
+    `;
+  }).join('');
+}
+
+// 當使用者點擊其他設備時觸發
+function selectDevice(deviceId) {
+  currentSelectedDeviceId = deviceId;
+  
+  // 🌟 切換設備時不再清空圖表！而是把該設備在背景記錄的歷史軌跡叫出來
+  if (charts.detailChart) {
+    // 使用展開運算子 [...] 複製記憶體中的陣列，避免連動干擾
+    charts.detailChart.data.labels = [...deviceHistory[deviceId].labels];
+    charts.detailChart.data.datasets[0].data = [...deviceHistory[deviceId].data];
+    charts.detailChart.update();
+  }
+
+  renderFloor2Devices();
+  updateRightPanel(deviceId);
+}
+// 更新右側面板的文字與狀態標籤
+function updateRightPanel(deviceId) {
+  const dev = floor2DevicesData.find(d => d.id === deviceId);
+  if (!dev) return;
+
+  document.getElementById('selDeviceName').textContent = dev.name;
+  
+  const badge = document.getElementById('selDeviceStatus');
+  if (dev.status_code === 1) {
+    badge.textContent = '運轉中 (ON)'; badge.className = 'badge badge-on';
+  } else {
+    badge.textContent = '已停用 (OFF)'; badge.className = 'badge badge-off';
+  }
+
+  document.getElementById('detailPower').textContent = dev.power_w + ' W';
+  document.getElementById('detailVoltage').textContent = `${dev.rated_v} V (真實: ${dev.real_v} V)`;
+  document.getElementById('detailCurrent').textContent = dev.current_a + ' A';
+}
+
+/* ============================================================
+   ⚡ 動態 API 串接 (每 2 秒向後端要求推進時間並抓資料)
+   ============================================================ */
+async function fetchLiveGridStatus() {
+  try {
+    const response = await fetch('/api/grid_status');
+    const data = await response.json();
+
+    if (data.status === 'success') {
+      // 1. 動態更新麵包屑上的模擬時間
+      const timeOnly = data.timestamp.replace('模擬時間 ', '');
+      document.querySelector('.crumb').innerHTML = 
+        `主頁 <span style="opacity:.4">/</span> <b>2F 設施</b> <span style="color:var(--accent); margin-left:15px; font-weight:bold;">⚡ LIVE: ${timeOnly}</span>`;
+
+      // 2. 重新讀取最新的 2F 設備狀態
+      await loadFloor2DevicesData();
+
+      // 🌟 3. 將 16 個設備當下的瓦數，全部寫入背景記憶體中
+      floor2DevicesData.forEach(dev => {
+        let hist = deviceHistory[dev.id];
+        hist.labels.push(timeOnly);
+        hist.data.push(dev.power_w);
+
+        // 控制只保留最新的 16 個點 (16點 * 15分鐘 = 剛好 4 小時)
+        if (hist.labels.length > 96) {
+          hist.labels.shift();
+          hist.data.shift();
+        }
+      });
+
+      // 🌟 4. 更新當前選中設備的圖表畫面
+      if (charts.detailChart) {
+        const chart = charts.detailChart;
+        chart.data.labels = [...deviceHistory[currentSelectedDeviceId].labels];
+        chart.data.datasets[0].data = [...deviceHistory[currentSelectedDeviceId].data];
+        chart.update();
+      }
+    }
+  } catch (error) {
+    console.error("API 連線失敗，請確認 server.py 是否正在運行：", error);
+  }
+}
+
+// ==========================================
+// 🚀 網頁啟動點
+// ==========================================
+(function boot(){
+  initDetail(); // 先畫好空圖表與標題
+  
+  // 立刻抓一次資料把 16 個設備畫出來
+  loadFloor2DevicesData().then(() => {
+    // 接著啟動心跳！每 2000 毫秒(2秒) 呼叫一次 API
+    setInterval(fetchLiveGridStatus, 1000); 
+  });
+})();
+</script>
+</body>
+</html>

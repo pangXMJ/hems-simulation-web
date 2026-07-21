@@ -2,11 +2,9 @@ import sys
 import os
 import datetime
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 import opendssdirect as dss
-import pandas as pd
-from fastapi.staticfiles import StaticFiles
 import pandas as pd
 
 # ==========================================
@@ -34,7 +32,6 @@ app = FastAPI(
     description="Backend server for Microgrid EMS and ESP32 IoT integration" 
 )
 
-
 # 1. 取得 server.py 當前所在的資料夾 (C:\...\results)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -44,11 +41,6 @@ TARGET_DATA_DIR = os.path.join(BASE_DIR, "..", "data", "sample")
 # 3. 把這個正確的路徑掛載給網頁
 app.mount("/data", StaticFiles(directory=TARGET_DATA_DIR), name="data")
   
-
-# 全域變數：紀錄當前的模擬步數 (15分鐘為一步)
-current_step = 0
-MAX_STEPS = 96  # 一天 24 小時 * 4 
-
 current_step = 0
 MAX_STEPS = 96  # 一天 24 小時 * 4 
 is_island_mode = False  # 紀錄是否處於斷網獨立供電模式
@@ -62,7 +54,6 @@ pv_w_list = df_pv_brain['pv_kw'].tolist()
 df_loads_brain = pd.read_csv(os.path.join(TARGET_DATA_DIR, "LoadShapes_All_Nodes_15min.csv"))
 load_cols = [c for c in df_loads_brain.columns if c not in ['Time', 'Hour', 'Minute']]
 total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()
-
 
 try:
     df_pso = pd.read_csv(os.path.join(TARGET_DATA_DIR, "pso_battery_power.csv"))
@@ -82,92 +73,96 @@ def startup_event():
     # 設定為 Daily 模式，步長 15 分鐘，但每次呼叫 API 時只解 1 步 (number=1)
     dss.Text.Command("Set mode=Daily stepsize=15m number=1")
     
-    # 🌟 修正 1：加上這行，奪取 OpenDSS 電池控制權
+    # 奪取 OpenDSS 電池控制權
     dss.Text.Command("Edit Storage.Battery_Sys DispMode=External")
     
     print("✅ OpenDSS 數位孿生模型已載入，等待 API 呼叫執行潮流計算...")
 
+# 🌟 API 參數新增 web_island_mode_active，預設為 False
 @app.get("/api/grid_status")
-def get_grid_status():
+def get_grid_status(web_island_mode_active: bool = False):
     """動態 API 端點：每呼叫一次，OpenDSS 就推進 15 分鐘並回傳與更新狀態"""
     global current_step, is_island_mode, meters_history_data
 
-    # 如果跑完一天，就重新從 00:00 開始[cite: 4]
+    # 1. 接收網頁傳來的停電按鈕狀態
+    is_island_mode = web_island_mode_active
+
+    # 如果跑完一天，就重新從 00:00 開始
     if current_step >= MAX_STEPS:
         startup_event()
         current_step = 0
-        is_island_mode = False 
+        # 這裡不重設 is_island_mode，交由前端網頁狀態決定
 
-    # 1. 換算當下時間戳記[cite: 4]
+    # 換算當下時間戳記
     current_minute = current_step * 15
     h = int(current_minute // 60)
     m = int(current_minute % 60)
     sim_time_str = f"{h:02d}:{m:02d}"   
 
     # ==========================================
-    # 🌟 關鍵修正 1：每次呼叫都強制奪取外部控制權
+    # 🌟 ATS 物理開關切換 (依據網頁按鈕狀態)
+    # ==========================================
+    if is_island_mode:
+        dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
+    else:
+        dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
+
+    # ==========================================
+    # 🌟 每次呼叫都強制奪取外部控制權
     # ==========================================
     dss.Text.Command("Edit Storage.Battery_Sys DispMode=External")
 
-    # 抓取運算前的電池 SOC (僅供狀態機判斷用)[cite: 4]
+    # 抓取運算前的電池 SOC
     dss.Circuit.SetActiveElement("Storage.Battery_Sys")
     soc_str = dss.Properties.Value("%stored")
     decision_soc = float(soc_str.replace('%', '').strip()) if soc_str else 0.0
 
-    # 計算淨功率供其他參考[cite: 4]
+    # 計算淨功率供其他參考
     pv_kw = pv_w_list[current_step] / 1000.0   
     load_kw = total_load_w_list[current_step] / 1000.0
     net_kw = pv_kw - load_kw  
 
-    # ==========================================
-    # 🧠 HEMS 大腦控制邏輯 (絕對值 kW 控制法)
-    # ==========================================
-    if decision_soc >= 99.9 and not is_island_mode:
-        is_island_mode = True
-        dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
-    elif decision_soc <= 20.0 and is_island_mode:
-        is_island_mode = False
-        dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
-
-    # 抓取當前時間步的 PSO 指令 (強制轉為 float 避免型態錯誤)
+    # 抓取當前時間步的 PSO 指令
     current_pso_kw = float(pso_kw_list[current_step])
     current_bess_state = "IDLING"
+    
+    # 宣告電池最大額定功率
+    BATTERY_KWRATED = 5.0
 
+    # ==========================================
+    # 🧠 HEMS 大腦控制邏輯 (動態百分比換算法)
+    # ==========================================
     if is_island_mode:
-        # 停電模式：強制放電
-        dss.Text.Command("Edit Storage.Battery_Sys kW=3.0 State=DISCHARGING")
+        # 停電模式：強制放電 3.0kW (60%)
+        dss.Text.Command("Edit Storage.Battery_Sys State=DISCHARGING")
+        dss.Text.Command("Edit Storage.Battery_Sys %Discharge=60.0")
         current_bess_state = "DISCHARGING"
     else:
         if current_pso_kw > 0.05:
             # PSO 要求放電
-            if decision_soc <= 20.0:
-                dss.Text.Command("Edit Storage.Battery_Sys State=IDLING")
-                current_bess_state = "IDLING"
-            else:
-                dss.Text.Command(f"Edit Storage.Battery_Sys kW={current_pso_kw} State=DISCHARGING")
-                current_bess_state = "DISCHARGING"
+            pct_discharge = (current_pso_kw / BATTERY_KWRATED) * 100.0
+            dss.Text.Command("Edit Storage.Battery_Sys State=DISCHARGING")
+            dss.Text.Command(f"Edit Storage.Battery_Sys %Discharge={pct_discharge}")
+            current_bess_state = "DISCHARGING"
                 
         elif current_pso_kw < -0.05:
             # PSO 要求充電
-            if decision_soc >= 99.9:
-                dss.Text.Command("Edit Storage.Battery_Sys State=IDLING")
-                current_bess_state = "IDLING"
-            else:
-                # 確保充電功率為正值
-                dss.Text.Command(f"Edit Storage.Battery_Sys kW={abs(current_pso_kw)} State=CHARGING")
-                current_bess_state = "CHARGING"
+            pct_charge = (abs(current_pso_kw) / BATTERY_KWRATED) * 100.0
+            dss.Text.Command("Edit Storage.Battery_Sys State=CHARGING")
+            dss.Text.Command(f"Edit Storage.Battery_Sys %Charge={pct_charge}")
+            current_bess_state = "CHARGING"
         else:
             # PSO 要求待機
             dss.Text.Command("Edit Storage.Battery_Sys State=IDLING")
             current_bess_state = "IDLING"
 
     # ==========================================
-    # 推進 15 分鐘並解算潮流[cite: 4]
+    # 推進 15 分鐘並解算潮流
     # ==========================================
     dss.Text.Command("Solve")
 
     # ==========================================
-    # 🌟 關鍵修正 2：Solve 執行完後，重新抓取最新的物理數值
+    # Solve 執行完後，重新抓取最新的物理數值
     # ==========================================
     dss.Circuit.SetActiveElement("Storage.Battery_Sys")
     updated_soc_str = dss.Properties.Value("%stored")
@@ -193,7 +188,7 @@ def get_grid_status():
         print(f"⚠️ 警告：無法寫入 {bess_csv_path}，請確認檔案是否被 Excel 開啟！")
 
     # ==========================================
-    # 抓取電錶歷史資料 (與您原本的程式碼相同)[cite: 4]
+    # 抓取電錶歷史資料
     # ==========================================
     meter_targets = {
         "總電錶T": "KwhT", "PV電錶": "MeterPV", "A電錶": "KwhA",
@@ -217,7 +212,7 @@ def get_grid_status():
         pass
 
     # ==========================================
-    # 抓取 1F 到 3F 設備的真實物理狀態 (與您原本的程式碼相同)[cite: 4]
+    # 抓取 1F 到 3F 設備的真實物理狀態
     # ==========================================
     floor1_loads = [
         {"id": "f1_dev_1", "name": "1F 冰箱(EP)", "dss_name": "Load.ep_fridge_an"},
@@ -313,7 +308,7 @@ def get_grid_status():
         pd.DataFrame(device_data).to_csv(csv_path, index=False, encoding='utf-8-sig')
 
     # ==========================================
-    # 電壓與電流抓取 (回傳 JSON 給前端)[cite: 4]
+    # 電壓與電流抓取 (回傳 JSON 給前端)
     # ==========================================
     def get_bus_voltage(bus_name):
         dss.Circuit.SetActiveBus(bus_name)
@@ -361,7 +356,6 @@ def get_grid_status():
         "l2": {"v1": l2_v1, "a1": l2_a1, "v2": l2_v2, "a2": l2_a2},
         "l3": {"v1": l3_v1, "a1": l3_a1, "v2": l3_v2, "a2": l3_a2}
     }
-
 
 # ==========================================
 # 🌐 靜態網頁伺服器
