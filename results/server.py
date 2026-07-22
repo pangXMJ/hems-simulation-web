@@ -15,7 +15,7 @@ OPENDSS_DIR = r"C:\projects\hems-simulation-web\opendss"
 # 前端網頁與靜態檔案所在的資料夾
 SERVER_DIR = r"C:\projects\hems-simulation-web\results"
 # 產生的 CSV 即時數據存放資料夾
-DATA_SAVE_DIR = r"C:\projects\hems-simulation-web\data\sample"
+#DATA_SAVE_DIR = r"C:\projects\hems-simulation-web\data\sample"
 
 # 將 OpenDSS 路徑強制加入 Python 的大腦 (搜尋清單) 中
 if OPENDSS_DIR not in sys.path:
@@ -39,14 +39,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TARGET_DATA_DIR = os.path.join(BASE_DIR, "..", "data", "sample")
 
 # 3. 把這個正確的路徑掛載給網頁
-app.mount("/data", StaticFiles(directory=TARGET_DATA_DIR), name="data")
+#app.mount("/data", StaticFiles(directory=TARGET_DATA_DIR), name="data")
   
 current_step = 0
 MAX_STEPS = 96  # 一天 24 小時 * 4 
 is_island_mode = False  # 紀錄是否處於斷網獨立供電模式
 
 # 🌟 新增：存放電錶累積折線圖的歷史資料
-meters_history_data = []
+#meters_history_data = []
 
 df_pv_brain = pd.read_csv(os.path.join(TARGET_DATA_DIR, "pv_curve_15min.csv"))
 pv_w_list = df_pv_brain['pv_kw'].tolist() 
@@ -72,17 +72,50 @@ def startup_event():
     
     # 設定為 Daily 模式，步長 15 分鐘，但每次呼叫 API 時只解 1 步 (number=1)
     dss.Text.Command("Set mode=Daily stepsize=15m number=1")
+
+
     
     # 奪取 OpenDSS 電池控制權
     dss.Text.Command("Edit Storage.Battery_Sys DispMode=External")
     
     print("✅ OpenDSS 數位孿生模型已載入，等待 API 呼叫執行潮流計算...")
 
+outage_start_step = -1
+outage_end_step = -1
+
+@app.get("/api/set_outage")
+def set_outage(start_time: str, end_time: str):
+    """
+    接收前端傳來的停電時間 (格式 "HH:MM")
+    並重設 OpenDSS 模擬，從 00:00 重新開始跑
+    """
+    global outage_start_step, outage_end_step, current_step
+    
+    # 將 "14:00" 轉換為步數 (例如 14 * 4 = 56)
+    def time_to_step(t_str):
+        h, m = map(int, t_str.split(':'))
+        return h * 4 + (m // 15)
+        
+    outage_start_step = time_to_step(start_time)
+    outage_end_step = time_to_step(end_time)
+    
+    # 🌟 觸發「重跑 OpenDSS」
+    startup_event() 
+    current_step = 0 
+    
+    return {
+        "status": "success", 
+        "msg": f"已排程停電區間: 步數 {outage_start_step} 到 {outage_end_step}，模擬已重置"
+    }
+
+
 # 🌟 API 參數新增 web_island_mode_active，預設為 False
 @app.get("/api/grid_status")
-def get_grid_status(web_island_mode_active: bool = False):
+def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = "PSO"):
+
+
     """動態 API 端點：每呼叫一次，OpenDSS 就推進 15 分鐘並回傳與更新狀態"""
-    global current_step, is_island_mode, meters_history_data
+    global current_step, is_island_mode, outage_start_step, outage_end_step
 
     # 1. 接收網頁傳來的停電按鈕狀態
     is_island_mode = web_island_mode_active
@@ -97,15 +130,26 @@ def get_grid_status(web_island_mode_active: bool = False):
     current_minute = current_step * 15
     h = int(current_minute // 60)
     m = int(current_minute % 60)
-    sim_time_str = f"{h:02d}:{m:02d}"   
+    sim_time_str = f"{h:02d}:{m:02d}"  
 
-    # ==========================================
-    # 🌟 ATS 物理開關切換 (依據網頁按鈕狀態)
+    if outage_start_step <= current_step < outage_end_step:
+        is_island_mode = True
+    else:
+        is_island_mode = False 
+
+   # ==========================================
+    # 🌟 ATS 物理開關切換與孤島電壓源 (依據網頁按鈕狀態)
     # ==========================================
     if is_island_mode:
         dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
+        # ⚠️ 極度重要：啟動微電網孤島變流器，接管電壓與中性點
+        dss.Text.Command("Edit Vsource.BESS_GFM_L1 phases=1 bus1=EP_panel.1 basekv=0.11 pu=1.0 angle=0 enabled=yes")
+        dss.Text.Command("Edit Vsource.BESS_GFM_L2 phases=1 bus1=EP_panel.2 basekv=0.11 pu=1.0 angle=180 enabled=yes")
     else:
         dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
+        # 關閉孤島變流器，將控制權還給市電
+        dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
+        dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
 
     # ==========================================
     # 🌟 每次呼叫都強制奪取外部控制權
@@ -120,41 +164,126 @@ def get_grid_status(web_island_mode_active: bool = False):
     # 計算淨功率供其他參考
     pv_kw = pv_w_list[current_step] / 1000.0   
     load_kw = total_load_w_list[current_step] / 1000.0
-    net_kw = pv_kw - load_kw  
-
-    # 抓取當前時間步的 PSO 指令
-    current_pso_kw = float(pso_kw_list[current_step])
-    current_bess_state = "IDLING"
+    net_kw = pv_kw - load_kw 
     
-    # 宣告電池最大額定功率
+    # 計算 PV 當日累積發電量
+    current_pv_w_sum = sum(pv_w_list[:current_step + 1])
+    pv_cumulative_kwh = (current_pv_w_sum / 1000.0) * 0.25
+
+    current_pso_kw = float(pso_kw_list[current_step])
+    
+    # 宣告電池與假負載額定功率
     BATTERY_KWRATED = 5.0
+    DUMP_LOAD_MAX_KW = 2.0
+
+
+    # 🌟 預設電池狀態 (防止 return 報錯)
+    current_bess_state = "IDLING" 
 
     # ==========================================
-    # 🧠 HEMS 大腦控制邏輯 (動態百分比換算法)
+    # 🧠 HEMS 大腦控制邏輯 (三防線 + 自發自用 + PSO 排程)
     # ==========================================
     if is_island_mode:
-        # 停電模式：強制放電 3.0kW (60%)
-        dss.Text.Command("Edit Storage.Battery_Sys State=DISCHARGING")
-        dss.Text.Command("Edit Storage.Battery_Sys %Discharge=60.0")
-        current_bess_state = "DISCHARGING"
-    else:
-        if current_pso_kw > 0.05:
-            # PSO 要求放電
-            pct_discharge = (current_pso_kw / BATTERY_KWRATED) * 100.0
-            dss.Text.Command("Edit Storage.Battery_Sys State=DISCHARGING")
-            dss.Text.Command(f"Edit Storage.Battery_Sys %Discharge={pct_discharge}")
-            current_bess_state = "DISCHARGING"
+        if net_kw > 0.05: 
+            # 【危機：太陽能發電過剩】
+            available_charge_space = BATTERY_KWRATED if decision_soc < 99.9 else 0.0 
+            charge_need = abs(net_kw) 
+            
+            # --- 第一道防線：電池最大化吸收 ---
+            actual_charge_kw = min(charge_need, available_charge_space)
+            if actual_charge_kw > 0:
+                dss.Text.Command(f"Edit Storage.Battery_Sys state=CHARGING kW={round(actual_charge_kw, 2)}")
+                current_bess_state = "CHARGING"
+            else:
+                dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+                
+            remaining_excess = charge_need - actual_charge_kw
+            
+            # --- 第二道防線：洩載電阻 (假負載) 吸收 ---
+            actual_dump_kw = min(remaining_excess, DUMP_LOAD_MAX_KW)
+            dss.Text.Command(f"Edit Load.DumpLoad kW={round(actual_dump_kw, 2)}")
+            remaining_excess -= actual_dump_kw
+            
+            # --- 第三道防線：PV 主動降載 ---
+            if remaining_excess > 0.05:
+                curtailed_pv_kw = load_kw + actual_charge_kw + actual_dump_kw
+                dss.Text.Command(f"Edit PVSystem.pv_array pmpp={round(curtailed_pv_kw, 2)}")
+                print(f"   🚨 [{sim_time_str}] PV過剩！充 {round(actual_charge_kw,1)}kW，假負載 {round(actual_dump_kw,1)}kW，降載 PV 至 {round(curtailed_pv_kw,1)}kW")
+            else:
+                dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0")
+                if actual_dump_kw > 0:
+                    print(f"   🔥 [{sim_time_str}] 防線作動！充 {round(actual_charge_kw,1)}kW，假負載消耗 {round(actual_dump_kw,1)}kW。")
+                    
+        elif net_kw < -0.05:
+            # 【危機：太陽能不足，需電池放電】
+            dss.Text.Command("Edit Load.DumpLoad kW=0.0") 
+            dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0") 
+            
+            if decision_soc <= 20.0:
+                dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+                print(f"   💀 [{sim_time_str}] 電池耗盡！無法支撐負載，微電網崩潰。")
+            else:
+                discharge_need = abs(net_kw)
+                actual_discharge_kw = min(discharge_need, BATTERY_KWRATED)
+                if discharge_need > BATTERY_KWRATED:
+                    print(f"   ⚠️ [{sim_time_str}] 過載！缺口 ({round(discharge_need,1)}kW) 超過極限 (5kW)")
+                dss.Text.Command(f"Edit Storage.Battery_Sys state=DISCHARGING kW={round(actual_discharge_kw, 2)}")
+                current_bess_state = "DISCHARGING"
+        else:
+            dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+            dss.Text.Command("Edit Load.DumpLoad kW=0.0")
+            dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0")
+
+    elif operation_mode == 'AUTO':
+        # 🟢 模式二：自發自用 (Baseline - 削峰填谷)
+        dss.Text.Command("Edit Load.DumpLoad kW=0.0")
+        dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0")
+
+        if net_kw > 0.05:
+            if decision_soc >= 99.9:
+                dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+            else:
+                charge_kw = min(net_kw, BATTERY_KWRATED)
+                charge_pct = round((charge_kw / BATTERY_KWRATED) * 100, 2)
+                dss.Text.Command(f"Edit Storage.Battery_Sys state=CHARGING %Charge={charge_pct}")
+                current_bess_state = "CHARGING"
+
+        elif net_kw < -0.05:
+            if decision_soc <= 20.0:
+                dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+            else:
+                discharge_kw = min(abs(net_kw), BATTERY_KWRATED)
+                discharge_pct = round((discharge_kw / BATTERY_KWRATED) * 100, 2)
+                dss.Text.Command(f"Edit Storage.Battery_Sys state=DISCHARGING %Discharge={discharge_pct}")
+                current_bess_state = "DISCHARGING"
+        else:
+            dss.Text.Command("Edit Storage.Battery_Sys state=IDLING")
+
+    elif operation_mode == 'PSO':
+        # 🔵 模式三：PSO 排程模式 (加入 SOC 安全保護)
+        dss.Text.Command("Edit Load.DumpLoad kW=0.0")
+        dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0")
+
+        if current_pso_kw > 0.05: 
+            if decision_soc <= 20.0:
+                dss.Text.Command("edit Storage.Battery_Sys State=IDLING")
+            else:
+                actual_discharge_kw = min(current_pso_kw, BATTERY_KWRATED)
+                if current_pso_kw > BATTERY_KWRATED:
+                    print(f"⚠️ [{sim_time_str}] PSO排程過載！要求 {round(current_pso_kw,1)}kW")
+                pct_discharge = (current_pso_kw / BATTERY_KWRATED) * 100.0
+                dss.Text.Command(f"edit Storage.Battery_Sys State=DISCHARGING %Discharge={pct_discharge}")
+                current_bess_state = "DISCHARGING"
                 
         elif current_pso_kw < -0.05:
-            # PSO 要求充電
-            pct_charge = (abs(current_pso_kw) / BATTERY_KWRATED) * 100.0
-            dss.Text.Command("Edit Storage.Battery_Sys State=CHARGING")
-            dss.Text.Command(f"Edit Storage.Battery_Sys %Charge={pct_charge}")
-            current_bess_state = "CHARGING"
+            if decision_soc >= 99.9:
+                dss.Text.Command("edit Storage.Battery_Sys State=IDLING")
+            else:
+                pct_charge = (abs(current_pso_kw) / BATTERY_KWRATED) * 100.0
+                dss.Text.Command(f"edit Storage.Battery_Sys State=CHARGING %Charge={pct_charge}")
+                current_bess_state = "CHARGING"
         else:
-            # PSO 要求待機
-            dss.Text.Command("Edit Storage.Battery_Sys State=IDLING")
-            current_bess_state = "IDLING"
+            dss.Text.Command("edit Storage.Battery_Sys State=IDLING")
 
     # ==========================================
     # 推進 15 分鐘並解算潮流
@@ -191,7 +320,7 @@ def get_grid_status(web_island_mode_active: bool = False):
         kwh = round(reg_map.get('kWh', 0), 5)
         meter_row[f"{ch_name}_當前累積功率(kWh)"] = kwh
 
-    meters_history_data.append(meter_row)
+    #meters_history_data.append(meter_row)
 
    
 
@@ -340,12 +469,19 @@ def get_grid_status(web_island_mode_active: bool = False):
         "source": source_status, 
         "pv_active": bool(pv_kw > 0),         
         "bess_state": current_bess_state,
+
+        "pv": {
+            "power_kw": round(pv_kw, 2),
+            "cumulative_kwh": round(pv_cumulative_kwh, 2)
+        },
         
         # 電池詳細資料
-        "bess_soc": round(current_soc, 2),
-        "bess_power_kw": round(bess_kw, 2),
-        "bess_current_a": round(bess_amp, 2),
-        
+        "bess": {
+            "soc": round(current_soc, 2),
+            "power_kw": round(bess_kw, 2),
+            "current_a": round(bess_amp, 2)
+        },
+
         # 電錶資料
         "meters": meter_row,
 

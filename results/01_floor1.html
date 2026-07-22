@@ -192,7 +192,13 @@ footer a{color:var(--accent); text-decoration:none;}
         <button class="btn-line" onclick="window.location.href='hems_index.html'"><span class="arrow">←</span> BACK TO HOME</button>
         <div class="spec-label" style="margin-top:26px;" id="detailEyebrow">DEVICE / FLOOR1</div>
         <h1 id="detailTitle">1F 設備總覽</h1>
-        <div style="margin-top:20px;"><span class="badge badge-on" id="detailBadge">ON</span></div>
+        <div style="margin-top:20px; display:flex; gap:10px; align-items:center;">
+          <span class="badge badge-on" id="detailBadge">ON</span>
+          <!-- 👇 新增這個停電排程按鈕 👇 -->
+          <button class="badge" style="cursor:pointer; background:rgba(255,90,90,0.1); color:#ff5a5a; border-color:rgba(255,90,90,0.4);" onclick="scheduleOutage()">
+            ⚡ 設定停電排程
+          </button>
+        </div>
       </div>
     </div>
   </section>
@@ -411,6 +417,37 @@ async function fetchLiveGridStatus() {
     console.error("API 連線失敗，請確認 server.py 是否正在運行：", error);
   }
 }
+
+async function scheduleOutage() {
+    let startTime = prompt("請輸入停電開始時間 (格式 HH:MM，例如 14:00):", "14:00");
+    let endTime = prompt("請輸入預計復電時間 (格式 HH:MM，例如 16:00):", "16:00");
+
+    if (startTime && endTime) {
+        try {
+            const response = await fetch(`/api/set_outage?start_time=${startTime}&end_time=${endTime}`);
+            const data = await response.json();
+            
+            if (data.status === "success") {
+                alert("停電排程已設定！系統將從 00:00 重新開始模擬。");
+                
+                // 🧹 專屬於 1F 頁面的清空邏輯：重置 17 個設備的歷史紀錄
+                for(let i = 1; i <= 17; i++) {
+                  deviceHistory[`f1_dev_${i}`] = { labels: [], data: [] };
+                }
+                
+                // 清空當前畫面上的圖表
+                if (charts.detailChart) {
+                    charts.detailChart.data.labels = [];
+                    charts.detailChart.data.datasets[0].data = [];
+                    charts.detailChart.update();
+                }
+            }
+        } catch (error) {
+            console.error("設定停電失敗:", error);
+        }
+    }
+}
+
 
 // ==========================================
 // 🚀 網頁啟動點

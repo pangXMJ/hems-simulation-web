@@ -238,37 +238,7 @@ function initChart() {
   });
 }
 
-// ==========================================
-// 2. 先行載入 CSV 劇本
-// ==========================================
-async function preloadSolarCSV() {
-  try {
-    const res = await fetch('./data/pv_curve_15min.csv?t=' + new Date().getTime());
-    if (!res.ok) throw new Error('找不到 CSV 檔案');
-    
-    const text = await res.text();
-    const records = Papa.parse(text.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true }).data;
 
-    records.forEach(row => {
-      if (row.time !== undefined && row.pv_kw !== undefined && row.time !== null) {
-        let rawTime = String(row.time).trim();
-        let rawPv = parseFloat(row.pv_kw);
-        let pvValueKw = isNaN(rawPv) ? 0 : (rawPv / 1000); // W 轉 kW
-
-        let timeParts = rawTime.split(':');
-        if (timeParts.length >= 2) {
-          let h = timeParts[0].padStart(2, '0');
-          let m = timeParts[1].padStart(2, '0');
-          let formattedTime = `${h}:${m}`;
-          pvCurveDB[formattedTime] = pvValueKw;
-        }
-      }
-    });
-    console.log("✅ 太陽能劇本載入成功！");
-  } catch (error) {
-    console.error("讀取太陽能 CSV 失敗：", error);
-  }
-}
 
 // ==========================================
 // 3. 接收後端時間並更新圖表 (每秒觸發)
@@ -276,88 +246,68 @@ async function preloadSolarCSV() {
 // ==========================================
 // 3. 接收後端時間並讀取 CSV 更新圖表
 // ==========================================
+// 刪除原本的 preloadSolarCSV 相關邏輯
+// 直接修改 fetchLiveGridStatus
+
 async function fetchLiveGridStatus() {
   try {
-    // 1. 呼叫 API 推進時間
     const response = await fetch('/api/grid_status');
     const data = await response.json();
 
     if (data.status === 'success') {
       const timeOnly = data.timestamp.replace('模擬時間 ', '').trim();
       
-      // 更新狀態列
       document.querySelector('.crumb').innerHTML = 
         `主頁 <span style="opacity:.4">/</span> <b>太陽能系統</b> <span style="color:var(--solar); margin-left:15px; font-weight:bold;">⚡ LIVE: ${timeOnly}</span>`;
 
-      // --- 🌞 太陽能資料更新邏輯 (維持不變) ---
-      let currentPVKw = pvCurveDB[timeOnly] !== undefined ? pvCurveDB[timeOnly] : 0;
-      document.getElementById('currentPowerText').innerHTML = 
-        `${currentPVKw.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kW</span>`;
+      // --- 🌞 太陽能資料更新邏輯 (直接吃 JSON) ---
+      if (data.pv) {
+          document.getElementById('currentPowerText').innerHTML = 
+            `${data.pv.power_kw.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kW</span>`;
+          document.getElementById('cumulativePowerText').innerHTML = 
+            `${data.pv.cumulative_kwh.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kWh</span>`;
 
-      let totalKw = 0;
-      for (let timeKey in pvCurveDB) {
-          if (timeKey <= timeOnly) {  
-              totalKw += pvCurveDB[timeKey];
+          solarHistory.labels.push(timeOnly);
+          solarHistory.data.push(data.pv.power_kw);
+          if (solarHistory.labels.length > 96) {
+            solarHistory.labels.shift();
+            solarHistory.data.shift();
           }
+          detailChart.data.labels = [...solarHistory.labels];
+          detailChart.data.datasets[0].data = [...solarHistory.data];
+          detailChart.update();
       }
-      let cumulativeKwh = totalKw * 0.25; 
-      document.getElementById('cumulativePowerText').innerHTML = 
-          `${cumulativeKwh.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kWh</span>`;
 
-      solarHistory.labels.push(timeOnly);
-      solarHistory.data.push(currentPVKw);
-      if (solarHistory.labels.length > 96) {
-        solarHistory.labels.shift();
-        solarHistory.data.shift();
-      }
-      detailChart.data.labels = [...solarHistory.labels];
-      detailChart.data.datasets[0].data = [...solarHistory.data];
-      detailChart.update();
+      // --- 🔋 電池資料更新邏輯 (直接吃 JSON) ---
+      if (data.bess) {
+          document.getElementById('bessSocText').innerHTML = 
+              `${data.bess.soc.toFixed(1)} <span style="font-size:20px; color:var(--faint);">%</span>`;
+          document.getElementById('bessPowerText').innerHTML = 
+              `${data.bess.power_kw.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kW</span>`;
+          document.getElementById('bessAmpText').innerHTML = 
+              `${data.bess.current_a.toFixed(2)} <span style="font-size:20px; color:var(--faint);">A</span>`;
 
-      // --- 🔋 電池資料更新邏輯 (改為讀取 CSV) ---
-      const bessRes = await fetch('/data/bess_status.csv?t=' + new Date().getTime());
-      if (bessRes.ok) {
-          const bessText = await bessRes.text();
-          // 使用 PapaParse 解析，自動將數字字串轉為數字 (dynamicTyping: true)
-          const bessRecords = Papa.parse(bessText.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true }).data;
-          
-          if (bessRecords.length > 0) {
-              const bessData = bessRecords[0]; // 讀取最新一筆 (第一列)
-              
-              document.getElementById('bessSocText').innerHTML = 
-                  `${bessData.soc.toFixed(1)} <span style="font-size:20px; color:var(--faint);">%</span>`;
-              document.getElementById('bessPowerText').innerHTML = 
-                  `${bessData.power_kw.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kW</span>`;
-              document.getElementById('bessAmpText').innerHTML = 
-                  `${bessData.current_a.toFixed(2)} <span style="font-size:20px; color:var(--faint);">A</span>`;
-
-              // 推進電池歷史折線圖
-              bessHistory.labels.push(bessData.time);
-              bessHistory.data.push(bessData.soc);
-
-              if (bessHistory.labels.length > 96) {
-                  bessHistory.labels.shift();
-                  bessHistory.data.shift();
-              }
-
-              bessChart.data.labels = [...bessHistory.labels];
-              bessChart.data.datasets[0].data = [...bessHistory.data];
-              bessChart.update();
+          bessHistory.labels.push(timeOnly);
+          bessHistory.data.push(data.bess.soc);
+          if (bessHistory.labels.length > 96) {
+              bessHistory.labels.shift();
+              bessHistory.data.shift();
           }
+          bessChart.data.labels = [...bessHistory.labels];
+          bessChart.data.datasets[0].data = [...bessHistory.data];
+          bessChart.update();
       }
     }
   } catch (error) {
-    console.error("API 連線或讀取 CSV 失敗：", error);
+    console.error("API 連線失敗：", error);
   }
 }
 
-// ==========================================
-// 🚀 網頁啟動點
-// ==========================================
+// 啟動點變得超級乾淨
 (async function boot(){
   initChart();
-  await preloadSolarCSV(); 
-  setInterval(fetchLiveGridStatus, 300); 
+  // 注意：這裡改為 1000 毫秒
+  setInterval(fetchLiveGridStatus, 1000); 
 })();
 </script>
 </body>

@@ -71,7 +71,7 @@ is_target_outage = (mode == 'island' and outage_start_step <= step < outage_end_
         if is_island_mode:
             dss.Text.Command("Edit Storage.Battery_Sys DispMode=External")
             
-            if net_kw < -0.05: 
+            if net_kw > -0.05: 
                 # 【危機：太陽能發電過剩】
                 available_charge_space = BATTERY_KWRATED
                 if soc >= 99.9: available_charge_space = 0.0 
@@ -103,7 +103,7 @@ is_target_outage = (mode == 'island' and outage_start_step <= step < outage_end_
                     if actual_dump_kw > 0:
                         print(f"   🔥 [{time_str}] 防線作動！充 {round(actual_charge_kw,1)}kW，假負載消耗 {round(actual_dump_kw,1)}kW。")
             
-            elif net_kw > 0.05:
+            elif net_kw < 0.05:
                 # 【危機：太陽能不足，需電池放電】
                 dss.Text.Command("Edit Load.DumpLoad kW=0.0") 
                 dss.Text.Command("Edit PVSystem.pv_array pmpp=5.0") 

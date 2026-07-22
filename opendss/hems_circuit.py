@@ -138,6 +138,13 @@ def build_circuit():
         # 初始狀態設定。IDLING: 待機中，既不充電也不放電。後續可透過指令改為 CHARGING（充電）或 DISCHARGING（放電）。
         "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 %stored=50 %reserve=20 %IdlingKw=0 DispMode=External",
 
+
+        #  ===== 這三行：預先建立微電網孤島變流器 (預設關閉) 與 洩載電阻 (假負載) ===== 
+        "New Vsource.BESS_GFM_L1 phases=1 bus1=EP_panel.1 basekv=0.11 pu=1.0 angle=0 enabled=no",
+        "New Vsource.BESS_GFM_L2 phases=1 bus1=EP_panel.2 basekv=0.11 pu=1.0 angle=180 enabled=no",
+        "New Load.DumpLoad phases=1 bus1=EP_panel.1.2 kV=0.22 kW=0.001 pf=1 model=1 daily=PV_Shape",
+        # ============================================================================== 
+
 # ==========================================
 # ATS 自動轉換開關與 EP 配電盤 (停電備援邏輯)
 #===========================================
