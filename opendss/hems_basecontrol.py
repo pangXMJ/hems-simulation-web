@@ -316,6 +316,53 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1):
         dss.Text.Command("Solve")
 
 
+        if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0: #[cite: 7]
+            expected_pso = pso_kw_list[step]
+            actual_powers = dss.CktElement.Powers() #[cite: 7]
+            actual_kw = actual_powers[0] if actual_powers else 0.0
+            
+            internal_vars = dict(zip(dss.CktElement.AllVariableNames(), dss.CktElement.AllVariableValues())) #[cite: 7]
+            internal_state = internal_vars.get('State', 0)
+            
+            # 💡 修正 2：釐清當下是誰在控制電池？
+            if is_island_mode:
+                print(f"🛡️ [{time_str}] 控制權: 孤島緊急控制器 (無視 PSO 預設排程)")
+            else:
+                print(f"🕒 [{time_str}] 控制權: PSO 最佳化排程 (指令: {expected_pso} kW)")
+                
+            print(f"   👉 物理端輸出: {round(actual_kw, 3)} kW (State: {internal_state})")
+
+        # ==========================================
+        # 🩺 系統健康度稽核 (物理驗證)
+        # ==========================================
+        # 1. 取得市電輸入總功率 (kW)
+        sys_power = dss.Circuit.TotalPower() #[cite: 7]
+        total_in_kw = -sys_power[0] if sys_power else 0.0 
+
+        # 2. 取得全系統線損 (kW)
+        sys_losses = dss.Circuit.Losses() #[cite: 7]
+        loss_kw = sys_losses[0] / 1000.0 if sys_losses else 0.0
+
+        # 3. 取得真實太陽能發電功率 (kW)
+        if dss.Circuit.SetActiveElement("PVSystem.PV_Array") != 0: #[cite: 7]
+            pv_powers = dss.CktElement.Powers() #[cite: 7]
+            actual_pv_kw = abs(pv_powers[0]) if pv_powers else 0.0
+        else:
+            actual_pv_kw = 0.0
+
+        # 4. 利用能量守恆定律反推真實負載：P_load = P_grid + P_pv + P_battery - P_loss
+        actual_load_kw = total_in_kw + actual_pv_kw + actual_kw - loss_kw
+
+        # 5. 比對「CSV理論預期負載」與「物理真實負載」的偏差
+        expected_load_kw = (ep_load_w_list[step] / 1000.0) if is_island_mode else (total_load_w_list[step] / 1000.0)
+        expected_load_kw += actual_dump_kw if (is_island_mode and 'actual_dump_kw' in locals()) else 0.0
+        
+        load_deviation = abs(actual_load_kw - expected_load_kw)
+
+        if load_deviation > 0.5: 
+            print(f"   ⚠️ [負載壓降偏移] 理論應耗: {round(expected_load_kw,2)}kW | 物理實耗: {round(actual_load_kw,2)}kW | 偏差: {round(load_deviation,2)}kW")
+        print("-" * 40)#檢查
+
         if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
             
             # 1. 抓取我們「期望」的指令
@@ -337,9 +384,9 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1):
             internal_soc = internal_vars.get('%stored', 0)
             internal_losses = internal_vars.get('Losses', 0)
             
-            print(f"🕒 [{time_str}] PSO指令: {expected_pso} kW")
-            print(f"   👉 物理端輸出: {round(actual_kw, 3)} kW (差距: {round(expected_pso - actual_kw, 3)} kW)")
-            print(f"   👉 內部狀態碼 (State): {internal_state} (1=放電, -1=充電, 0=待機)")
+            #print(f"🕒 [{time_str}] PSO指令: {expected_pso} kW")
+            #print(f"   👉 物理端輸出: {round(actual_kw, 3)} kW (差距: {round(expected_pso - actual_kw, 3)} kW)")
+            #print(f"   👉 內部狀態碼 (State): {internal_state} (1=放電, -1=充電, 0=待機)")
             #print(f"   👉 當前深層 SOC: {round(internal_soc, 2)} %")
             #print(f"   👉 內部熱損耗: {round(internal_losses, 3)} kW")
             print("-" * 40)
