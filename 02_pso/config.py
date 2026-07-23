@@ -1,85 +1,148 @@
-# ============================================================
-# 0. 匯入套件
-# ============================================================
-import numpy as np
+"""HEMS + PSO 的共用設定（15 分鐘版本）。"""
+
+from pathlib import Path
+
 
 # ============================================================
-# 1. 基本設定
+# 1. 檔案路徑
 # ============================================================
-# 固定亂數種子：讓每次執行結果比較接近，方便除錯與報告比較
-np.random.seed(42)
-
-# 模擬時間長度：一天 24 小時
-HOURS = 24
-DT = 1.0  # 每一筆資料代表 1 小時，所以 dt = 1 hour
-
 # ============================================================
-# 2. 電價、PV、BESS、停電參數
+# 1. 檔案路徑
 # ============================================================
-# 時間電價（元/kWh）
-# 這裡假設：
-# - 半夜與早上較便宜
-# - 白天較貴
-# - 傍晚尖峰最貴
-PRICE = np.array([
-    2.23, 2.23, 2.23, 2.23, 2.23, 2.23, 2.23, 2.23, 2.23,
-    5.02, 5.02, 5.02, 5.02, 5.02, 5.02, 5.02,
-    8.12, 8.12, 8.12, 8.12, 8.12, 8.12,
-    5.02, 5.02
-])
+# 預設資料夾結構：
+# project/
+# ├─ 02_pso/
+# │  ├─ config.py
+# │  ├─ pso.py
+# │  └─ main.py
+# ├─ data/01_raw/
+# │  ├─ LoadShapes_All_Nodes_15min_kw.csv
+# │  ├─ pv_curve_15min.csv
+# │  └─ electricity_tariffs_2tage_and_3tage.csv
+# └─ results/
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data" / "01_raw"
+RESULT_DIR = BASE_DIR / "data" / "04_optimized_pso"
 
-# 太陽能發電預測（kW）
-# 夜間為 0，白天逐漸增加，中午附近最大
-P_PV = np.array([
-    0, 0, 0, 0, 0, 0,
-    0.5, 1.5, 2.5, 3.5, 4.0, 4.2,
-    4.0, 3.0, 2.0, 0.8, 0.2,
-    0, 0, 0, 0, 0, 0, 0
-])
+LOAD_CSV_PATH = DATA_DIR / "LoadShapes_All_Nodes_15min_kw.csv"
+PV_CSV_PATH = DATA_DIR / "pv_curve_15min.csv"
+TARIFF_CSV_PATH = DATA_DIR / "electricity_tariffs_2tage_and_3tage.csv"
 
-# BESS：Battery Energy Storage System，電池儲能系統
-BESS_CAPACITY = 20.0      # 電池總容量，單位 kWh
-SOC_MIN = 0.2             # 最低 SOC，20%，用來保留緊急備用電量
-SOC_MAX = 0.9             # 最高 SOC，90%，避免電池過充
-P_BESS_MAX = 3.0          # 最大充放電功率，單位 kW
-INITIAL_SOC = 0.5         # 初始 SOC，50%
+TARIFF_TYPES = ("two_stage", "three_stage")
+TARIFF_SEASON = "summer"
+TARIFF_DAY_TYPE = "weekday"
 
-# 電池物理極限
-# 這裡代表真實電池不可能低於 0%，也不可能高於 100%。
-# SOC_MIN / SOC_MAX 則是「希望運轉範圍」，超出會被懲罰；
-# PHYSICAL_SOC_MIN / PHYSICAL_SOC_MAX 是「絕對物理限制」，會直接限制充放電。
-PHYSICAL_SOC_MIN = 0.0
-PHYSICAL_SOC_MAX = 1.0
-
-# 電池充放電效率
-ETA_CHARGE = 0.95         # 充電效率
-ETA_DISCHARGE = 0.95      # 放電效率
-
-# 最終 SOC 目標
-# 例如希望一天結束後，電池仍回到 50%，避免今天把明天的備用電全部用掉
-TARGET_FINAL_SOC = 0.5
-FINAL_SOC_PENALTY_WEIGHT = 10000
-
-# PV 棄光懲罰
-# 若設為 0，代表只計算棄光量，不會把棄光放進成本懲罰
-CURTAILMENT_PENALTY_WEIGHT = 0.0
-
-# 停電時間設定
-# 這裡代表 t = 18, 19, 20, 21 這幾小時為停電時段
-OUTAGE_START = 18
-OUTAGE_END = 21
-
-# 關鍵負載供電不足時的懲罰權重
-CRITICAL_SHORTAGE_PENALTY_WEIGHT = 100000
+OUTPUT_CSV_PATHS = {
+    "two_stage": RESULT_DIR / "battery_usage_two_stage_summer_weekday_15min.csv",
+    "three_stage": RESULT_DIR / "battery_usage_three_stage_summer_weekday_15min.csv",
+}
 
 # ============================================================
-# 3. PSO 參數設定
+# 2. 15 分鐘時間設定
 # ============================================================
-NUM_PARTICLES = 50        # 粒子數量
-MAX_ITERATIONS = 500       # 最大迭代次數
-DIMENSIONS = HOURS        # 每一個粒子有 24 維，代表 24 小時的 BESS 排程
+DT = 0.25  # 每個時段長度（小時）
+NUM_INTERVALS = 96  # 每日 15 分鐘時段總數
+INTERVALS_PER_HOUR = 4  # 每小時包含的 15 分鐘時段數
 
-# BESS 排程上下限
-# p_bess > 0：充電
-# p_bess < 0：放電
-BOUNDS = (-P_BESS_MAX, P_BESS_MAX)
+# 停電區間採「開始時間包含、結束時間不包含」。
+# 18:00 <= Time < 22:00，共 16 個 15 分鐘時段。
+OUTAGE_START_TIME = "18:00"  # 停電開始時間
+OUTAGE_END_TIME = "22:00"  # 停電結束時間（不包含）
+
+# 從停電結束後開始執行終端 SOC 控制，確保 24:00 回到目標 SOC。
+TERMINAL_SOC_CONTROL_START_TIME = "22:00"  # 終端 SOC 控制開始時間
+
+
+def time_to_interval(time_text):
+    """將 HH:MM 轉成當日第幾個 15 分鐘時段。"""
+    hour, minute = (int(value) for value in time_text.split(":"))  # 小時、分鐘
+    if not 0 <= hour <= 24 or not 0 <= minute < 60:
+        raise ValueError(f"時間格式錯誤：{time_text}")
+    if minute % 15 != 0:
+        raise ValueError(f"時間必須落在 15 分鐘刻度：{time_text}")
+    if hour == 24 and minute != 0:
+        raise ValueError(f"24 時只能寫成 24:00：{time_text}")
+    return hour * INTERVALS_PER_HOUR + minute // 15
+
+
+OUTAGE_START_INDEX = time_to_interval(OUTAGE_START_TIME)  # 停電開始時段索引
+OUTAGE_END_INDEX = time_to_interval(OUTAGE_END_TIME)  # 停電結束時段索引
+TERMINAL_SOC_CONTROL_START_INDEX = time_to_interval(
+    TERMINAL_SOC_CONTROL_START_TIME
+)  # 終端 SOC 控制開始時段索引
+
+
+# ============================================================
+# 3. 關鍵負載欄位
+# ============================================================
+# 停電時只保留以下 16 個設備；數值完全依負載 CSV（包含廚房插座 0.1 kW）。
+CRITICAL_LOAD_COLUMNS = [  # 停電時保留供電的關鍵負載欄位
+    "ep_fridge_an",  # 變頻冰箱
+    "ep_washer_an",  # 洗衣機
+    "ep_dryer_bn",  # 烘衣機
+    "ep_pump",  # 揚水馬達
+    "ep_1f_lighting1_an",  # 1 樓照明 1
+    "ep_1f_lighting2_bn",  # 1 樓照明 2
+    "ep_2f_lighting1_an",  # 2 樓照明 1
+    "ep_2f_lighting2_bn",  # 2 樓照明 2
+    "ep_3f_lighting1_an",  # 3 樓照明 1
+    "ep_3f_lighting2_bn",  # 3 樓照明 2
+    "ep_1f_wifi_an",  # Wi-Fi 路由器
+    "ep_1f_WaterHeater_abn",  # 電熱水器
+    "boosterpump_abn",  # 加壓馬達
+    "ep_kitchen_bn",  # 廚房插座
+    "ep_2f_socket1_an",  # 2 樓插座 1
+    "ep_2f_socket2_bn",  # 2 樓插座 2
+]
+
+# 這些欄位不是設備功率，不納入總負載加總。
+LOAD_METADATA_COLUMNS = {  # 不納入設備功率加總的資料欄位
+    "Time",
+    "Hour",
+    "Minute",
+    "total_kw",
+    "energy_kwh",
+    "total_energy_kwh",
+}
+
+
+# ============================================================
+# 4. 電池參數
+# ============================================================
+BESS_CAPACITY_KWH = 20.0  # 電池額定容量（kWh）
+INITIAL_SOC = 0.50  # 電池初始荷電狀態
+SOC_MIN = 0.20  # 電池最低荷電狀態
+SOC_MAX = 0.90  # 電池最高荷電狀態
+TARGET_FINAL_SOC = 0.50  # 每日結束目標荷電狀態
+
+P_BESS_MAX_KW = 5.0  # 電池最大充放電功率（kW）
+ETA_CHARGE = 0.95  # 電池充電效率
+ETA_DISCHARGE = 0.95  # 電池放電效率
+
+# 正常供電時允許電池由電網充電；停電時只能使用剩餘 PV 充電。
+ALLOW_GRID_CHARGING = True  # 是否允許由電網替電池充電
+
+# 電池功率符號：
+# > 0：Discharging（放電）
+# < 0：Charging（充電）
+# = 0：Idling（待機）
+
+
+# ============================================================
+# 5. 目標函數權重
+# ============================================================
+FINAL_SOC_PENALTY_WEIGHT = 10000.0  # 終端 SOC 偏差懲罰權重
+CRITICAL_SHORTAGE_PENALTY_WEIGHT = 100000.0  # 停電時關鍵負載缺電懲罰權重
+CURTAILMENT_PENALTY_WEIGHT = 0.0  # 多餘電力棄電懲罰權重
+
+
+# ============================================================
+# 6. PSO 參數
+# ============================================================
+RANDOM_SEED = 42  # PSO 隨機種子
+NUM_PARTICLES = 50  # PSO 粒子數量
+MAX_ITERATIONS = 500  # PSO 最大迭代次數
+INERTIA_MAX = 0.90  # 慣性權重最大值
+INERTIA_MIN = 0.40  # 慣性權重最小值
+COGNITIVE_COEFFICIENT = 1.50  # 個體最佳學習係數
+SOCIAL_COEFFICIENT = 1.50  # 全域最佳學習係數
