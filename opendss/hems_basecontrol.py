@@ -460,12 +460,15 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1):
             {"id": "f2_dev_13", "name": "2F 插座 4(L2)", "dss_name": "Load.l2_socket4_bn"},
             {"id": "f2_dev_14", "name": "2F 插座 5(L2)", "dss_name": "Load.l2_socket5_an"},
             {"id": "f2_dev_15", "name": "2F 插座 6(L2)", "dss_name": "Load.l2_socket6_bn"},
-            {"id": "f2_dev_16", "name": "2F 插座 7(L2)", "dss_name": "Load.l2_socket7_an"}
+            {"id": "f2_dev_16", "name": "2F 插座 7(L2)", "dss_name": "Load.l2_socket7_an"},
+            {"id": "f2_dev_17", "name": "2F 插座 1(EP)", "dss_name": "Load.EP_2F_socket1_an"},
+            {"id": "f2_dev_18", "name": "2F 插座 2(EP)", "dss_name": "Load.EP_2F_socket2_bn"}
+
         ]
         floor3_loads = [
             {"id": "f3_dev_1", "name": "3F 洗衣機(EP)", "dss_name": "Load.ep_washer_an"},
             {"id": "f3_dev_2", "name": "3F 烘衣機(EP)", "dss_name": "Load.ep_dryer_bn"},
-            {"id": "f3_dev_3", "name": "3F 加壓馬達(EP)", "dss_name": "Load.boosterpump_abn"},
+            {"id": "f3_dev_3", "name": "3F 加壓馬達(EP)", "dss_name": "Load.ep_boosterpump_abn"},
             {"id": "f3_dev_4", "name": "3F 照明 1(EP)", "dss_name": "Load.ep_3f_lighting1_an"},
             {"id": "f3_dev_5", "name": "3F 照明 2(EP)", "dss_name": "Load.ep_3f_lighting2_bn"},
             {"id": "f3_dev_6", "name": "3F 冷氣(L3)", "dss_name": "Load.l3_airc_abn"},

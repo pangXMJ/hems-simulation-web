@@ -175,7 +175,7 @@ def build_circuit():
 
         # 1F 插座220v/電熱水器  線路 4
         "New Line.EP_Br4 Bus1=EP_Panel.1.2 Bus2=EP_d.1.2 LineCode=wire_5p5mm2_2p Length=0.006 units=km",
-        "New Load.EP_1F_WaterHeater_BN phases=1 Bus1=EP_d.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_ep_1f_WaterHeater_abn",
+        "New Load.EP_1F_WaterHeater_ABN phases=1 Bus1=EP_d.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_ep_1f_WaterHeater_abn",
 
         # 1F 廚房專插/冰箱 線路 5
         "New Line.EP_Br5 Bus1=EP_Panel.1.0 Bus2=EP_e.1.0 LineCode=wire_5p5mm2_1p Length=0.01 units=km",#通常在 1F 後方或靠近陽台，距離 1F 盤較遠大概10公尺
@@ -189,7 +189,7 @@ def build_circuit():
         "New Line.ToLW Bus1=EP_Panel.1.2 Bus2=LW_panel.1.2 LineCode=wire_8mm2_2p Length=0.009 units=km",#從一樓拉到三樓大概 9公尺
         #  LW 線路 1，創造一條線叫 Topump，指定從 LW_panel  拉線過來接，源頭接在 LW_panel ，尾端幫 配電盤做一個 做一個接口 叫做 LW_a
         "New Line.Topump Bus1=LW_panel.1.2 Bus2=LW_a.1.2 LineCode=wire_5p5mm2_2p Length=0.002 units=km",#通常很近 2公尺
-        "New Load.BoosterPump_ABN phases=1 Bus1=LW_a.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_boosterpump_abn",
+        "New Load.EP_BoosterPump_ABN phases=1 Bus1=LW_a.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_ep_boosterpump_abn",
 
         # 2F 插座  線路 8
         "New Line.EP_Br8 Bus1=EP_Panel.1.0 Bus2=EP_h.1.0 LineCode=wire_5p5mm2_1p Length=0.015 units=km",#從一樓拉到 二樓大概10公尺以上
