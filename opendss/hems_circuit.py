@@ -8,10 +8,13 @@ def build_circuit():
     """建立 15 分鐘解析度的電網實體電路，並回傳指令清單"""
     
     dss.Basic.ClearAll()
+
+    storage_cmd = "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 %stored=50 %reserve=20 %IdlingKw=0 %EffCharge=95 %EffDischarge=95 DispMode=External"
+    print(f"🔍 [除錯] 目前實際使用的電池指令是: {storage_cmd}")
     
-    # 1. 讀取 15 分鐘的 CSV 
-    df_loads = pd.read_csv(r".\data\sample\LoadShapes_All_Nodes_15min.csv")
-    df_pv = pd.read_csv(r".\data\sample\pv_curve_15min.csv")
+    PROJECT_ROOT = r"C:\projects\hems-simulation-web"
+    df_loads = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "01_raw", "LoadShapes_All_Nodes_15min.csv"))
+    df_pv = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "01_raw", "pv_curve_15min.csv"))
 
     loadshape_commands = []
 
@@ -30,7 +33,8 @@ def build_circuit():
             loadshape_commands.append(cmd)
 
     temp_pv_path = rf"{temp_dir}\temp_pv.csv"
-    (df_pv['pv_kw'] / 1000.0).to_csv(temp_pv_path, index=False, header=False)
+    PV_PMPP = 5
+    (df_pv['pv_kw'] / 1000.0/ PV_PMPP).to_csv(temp_pv_path, index=False, header=False)
     pv_cmd = f"New LoadShape.PV_Shape npts=96 minterval=15 mult=(file={temp_pv_path})"
     loadshape_commands.append(pv_cmd)
 
@@ -125,7 +129,8 @@ def build_circuit():
         "New EnergyMeter.MeterPV element=Line.ToMeterPV terminal=1",
 
         # 3. 修正 PVSystem 的連接點，將其接在新建的 PV_Node 上 (原本是直接接 Inv_AC)
-        "New PVSystem.PV_Array phases=1 bus1=PV_Node.1.2 kV=0.22 kVA=5.0 pmpp=1.0 pf=1.0 daily=PV_Shape %cutin=0.1 %cutout=0.1",  # 5kW 太陽能系統，功因為 1.0，日曲線使用 PV_Shape，%cutin=0.0 %cutout=0.0 表示不會因為電壓過低而停機
+        "New PVSystem.PV_Array phases=1 bus1=PV_Node.1.2 kV=0.22 kVA=5.0 pmpp=5.0 pf=1.0 daily=PV_Shape %cutin=0.1 %cutout=0.1", 
+          # 5kW 太陽能系統，功因為 1.0，日曲線使用 PV_Shape，%cutin=0.0 %cutout=0.0 表示不會因為電壓過低而停機 實際發電功率 (kW) = pmpp × LoadShape 曲線當下的數值
 
 
 
@@ -137,7 +142,8 @@ def build_circuit():
         # kWhrated 電池的總能量容量（電量），即 20 度電。pf=1.0:
         # 預設功因為 1.0。state=IDLING:
         # 初始狀態設定。IDLING: 待機中，既不充電也不放電。後續可透過指令改為 CHARGING（充電）或 DISCHARGING（放電）。
-        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 %stored=50 %reserve=20 %IdlingKw=0 DispMode=External",
+        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 %stored=50 %reserve=20 %IdlingKw=0 %EffCharge=95 %EffDischarge=95 DispMode=External",
+        
 
 
         #  ===== 這三行：預先建立微電網孤島變流器 (預設關閉) 與 洩載電阻 (假負載) ===== 
@@ -434,6 +440,7 @@ def build_circuit():
 
         #"Solve",將solve刪除進入迴圈控制
     ])
+   
 
     return commands
 
