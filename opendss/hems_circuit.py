@@ -9,8 +9,7 @@ def build_circuit():
     
     dss.Basic.ClearAll()
 
-    storage_cmd = "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 %stored=50 %reserve=20 %IdlingKw=0 %EffCharge=95 %EffDischarge=95 DispMode=External"
-    print(f"🔍 [除錯] 目前實際使用的電池指令是: {storage_cmd}")
+   
     
     PROJECT_ROOT = r"C:\projects\hems-simulation-web"
     df_loads = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "01_raw", "LoadShapes_All_Nodes_15min.csv"))
@@ -149,7 +148,9 @@ def build_circuit():
         #  ===== 這三行：預先建立微電網孤島變流器 (預設關閉) 與 洩載電阻 (假負載) ===== 
         "New Vsource.BESS_GFM_L1 phases=1 bus1=EP_panel.1 basekv=0.11 pu=1.0 angle=0 enabled=no",
         "New Vsource.BESS_GFM_L2 phases=1 bus1=EP_panel.2 basekv=0.11 pu=1.0 angle=180 enabled=no",
-        "New Load.DumpLoad phases=1 bus1=EP_panel.1.2 kV=0.22 kW=0.001 pf=1 model=1 daily=PV_Shape",
+       #"New Load.DumpLoad phases=1 bus1=EP_panel.1.2 kV=0.22 kW=0.001 pf=1 model=1 daily=PV_Shape",
+       #「你 Edit 的 kW 值 × PV_Shape 曲線在這個時間點的數值」去算真正吸收的功率——如果 PV_Shape 這個時間點的數值是 0.3（不是 1.0),那實際被吸收的功率就會變成 1.5 × 0.3 = 0.45kW,遠低於三道防線原本精算出來要吸收的量
+        "New Load.DumpLoad phases=1 bus1=EP_panel.1.2 kV=0.22 kW=0.001 pf=1 model=1 ",
         # ============================================================================== 
 
 # ==========================================
@@ -442,8 +443,12 @@ def build_circuit():
     ])
    
 
-    return commands
+    for cmd in commands:
+        if cmd.strip().startswith("New Storage.Battery_Sys"):
+            print(f"🔍 [除錯] 目前實際使用的電池指令是: {cmd}")
+            break
 
+    return commands
 
 
 

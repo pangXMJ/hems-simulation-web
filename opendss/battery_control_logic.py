@@ -30,8 +30,8 @@ def decide_battery_action(
     回傳一個 dict，描述電池/假負載/PV 應該被設定成什麼狀態：
     {
         "battery_state": "CHARGING" / "DISCHARGING" / "IDLING",
-        "battery_command_kw": float | None,   # 孤島模式用絕對 kW 下指令
-        "battery_command_pct": float | None,  # 併網模式(AUTO/PSO)用 %Charge / %Discharge 下指令
+        "battery_command_kw": float | None,   # 目前已不再使用，保留欄位供未來需要絕對kW時使用
+        "battery_command_pct": float | None,  # 所有模式（含孤島）統一用 %Charge / %Discharge 下指令
         "dump_load_kw": float,                # 假負載（只有孤島模式會用到，其餘固定 0）
         "pv_pmpp": float,                      # PV 額定功率上限（孤島降載時會 < 5.0，其餘固定 5.0）
         "logs": [str, ...]                     # 這一步想印出來的除錯訊息，呼叫端自行 print
@@ -59,7 +59,7 @@ def decide_battery_action(
             actual_charge_kw = min(charge_need, available_charge_space)
             if actual_charge_kw > 0:
                 result["battery_state"] = "CHARGING"
-                result["battery_command_kw"] = round(actual_charge_kw, 2)
+                result["battery_command_pct"] = round((actual_charge_kw / battery_kwrated) * 100, 2)  # 🆕 改用百分比，跟平常模式一致
             else:
                 result["battery_state"] = "IDLING"
 
@@ -95,14 +95,25 @@ def decide_battery_action(
                 result["battery_state"] = "IDLING"
                 result["logs"].append(f"💀 [{time_str}] 電池耗盡！無法支撐負載，微電網崩潰。")
             else:
-                discharge_need = abs(net_kw)
+                actual_deficit = abs(net_kw)
+                
+                if operation_mode == "PSO" and current_pso_kw > 0:
+                    discharge_need = max(current_pso_kw, actual_deficit)
+                    result["logs"].append(
+                        f"📋 [{time_str}] 孤島+PSO：依排程放電 {round(current_pso_kw,1)}kW（真實缺口 {round(actual_deficit,1)}kW）"
+            )
+                else:
+                # baseline/AUTO：沒有規劃能力，維持原本的即時反應
+                    discharge_need = actual_deficit
+                    
                 actual_discharge_kw = min(discharge_need, battery_kwrated)
+
                 if discharge_need > battery_kwrated:
                     result["logs"].append(
                         f"⚠️ [{time_str}] 過載！缺口 ({round(discharge_need,1)}kW) 超過極限 ({battery_kwrated}kW)"
                     )
                 result["battery_state"] = "DISCHARGING"
-                result["battery_command_kw"] = round(actual_discharge_kw, 2)
+                result["battery_command_pct"] = round((actual_discharge_kw / battery_kwrated) * 100.0, 2)  # 🆕 同樣改用百分比
         else:
             result["battery_state"] = "IDLING"
             result["dump_load_kw"] = 0.0

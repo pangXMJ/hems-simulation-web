@@ -81,15 +81,19 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()
 
     #  ===== 新增這兩行：將 EP (緊急負載) 獨立計算出來 ===== 
-    ep_cols = [c for c in load_cols if 'ep_' in c.lower()]
+    #ep_cols = [c for c in load_cols if 'ep_' in c.lower()]
+    ep_cols = [c for c in load_cols if c.lower().startswith('ep_')]
     ep_load_w_list = df_loads_brain[ep_cols].sum(axis=1).tolist()
     #  ==================================================
-    
-    #過濾欄位：排除 Time（時間）、Hour（小時）、Minute（分鐘）等時間標籤欄位，只留下純設備名稱的欄位。
-    load_cols = [c for c in df_loads_brain.columns if c not in ['Time', 'Hour', 'Minute']]
-  
-    #將所有設備在相同時間點的消耗功率相加（sum(axis=1)），並轉換成 Python 列表（total_load_w_list），代表整個系統在各個時間點的總負載瓦數
-    total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()
+    try:
+        import config
+        print(f"🔎 [清單比對] ep_cols (真實電路): {sorted(ep_cols)}")
+        print(f"🔎 [清單比對] CRITICAL_LOAD_COLUMNS (PSO): {sorted(config.CRITICAL_LOAD_COLUMNS)}")
+        print(f"🔎 [清單比對] 兩者是否相同: {set(ep_cols) == set(config.CRITICAL_LOAD_COLUMNS)}")
+        print(f"🔎 [清單比對] 只在真實電路有、PSO沒有: {set(ep_cols) - set(config.CRITICAL_LOAD_COLUMNS)}")
+        print(f"🔎 [清單比對] 只在PSO有、真實電路沒有: {set(config.CRITICAL_LOAD_COLUMNS) - set(ep_cols)}")
+    except ImportError:
+        print("⚠️ [清單比對] 找不到 config 模組，可能沒有透過 scenario_switch.py 這條路徑執行")
 
     # 如果是 pso 或 island 模式，才讀取 PSO 電池排程，系統會檢查變數 mode。只有當模式為 'pso'（粒子群最佳化演算法模式）或 'island'（孤島/斷網模式）時，才會執行電池排程的讀取。
     #初始化排程：預先建立一個長度為 total_steps、數值全為 0.0 的列表
@@ -211,6 +215,8 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
             load_kw = total_load_w_list[step] / 1000.0
             
         net_kw = pv_kw - load_kw
+        if is_island_mode:
+            print(f"🔎 [停電PV比對] {time_str} 真實電路pv_kw={round(pv_kw,3)} load_kw(EP)={round(load_kw,3)} net_kw={round(net_kw,3)}")
 
         # ==========================================
         # 核心電池充放電控制 (依據 Mode 切換)
@@ -245,6 +251,8 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
             dump_load_max_kw=DUMP_LOAD_MAX_KW,
             time_str=time_str,
         )
+        if is_island_mode:
+            print(f"🔎 [決策輸出] {time_str} battery_state={action['battery_state']} battery_command_kw={action['battery_command_kw']}")
 
         for log_line in action["logs"]:
             print(f"   {log_line}")
@@ -366,6 +374,9 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
                 bess_kw = -total_powers[0] 
             currents_mag = dss.CktElement.CurrentsMagAng()
             if currents_mag: bess_amp = round(currents_mag[0], 2)
+
+        if is_island_mode:
+            print(f"🔎 [最終記錄] {time_str} bess_kw={round(bess_kw,3)}")
 
         bess_history_data.append({
             "Time": time_str,
@@ -546,7 +557,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     # ==========================================
     # 6. 一次性輸出全日所有資料表 (加入前綴)
     # ==========================================
-    base_path = r".\data\sample"
+    base_path = OUTPUT_DIR
     os.makedirs(base_path, exist_ok=True)
 
     print(f"📊 [{prefix}] 全天累積線損: {round(total_losses_kwh, 3)} kWh")

@@ -127,6 +127,8 @@ def write_load_csv(device_schedules: list):
             on_power_w = float(df[col].max())
 
         mask = np.zeros(n_rows)
+        if start_step >= end_step:
+            raise ValueError(f"設備 {col} 的開始時間必須早於結束時間（目前 {dev['start_time']} ~ {dev['end_time']}）")
         mask[start_step:end_step] = on_power_w
         df[col] = mask
 
@@ -184,6 +186,8 @@ def _patch_config_and_reload_pso(outage_start: str | None, outage_end: str | Non
         config.OUTAGE_END_INDEX = 0
 
     importlib.reload(pso)  # 讓 pso.py 重新從 config 抓最新的停電區間常數
+    import pso
+    print(f"🔎 [停電區間檢查] OUTAGE_START_INDEX={pso.OUTAGE_START_INDEX}, OUTAGE_END_INDEX={pso.OUTAGE_END_INDEX}")
     return config, pso
 
 
@@ -212,6 +216,8 @@ def run_pso_for_scenario(pricing: str, outage_start: str | None, outage_end: str
     tariff_input["price_per_kwh"] = pso_main.build_price_curve(
         tariff_df, tariff_input["Time"], tariff_type
     )
+    print(f"🔎 [PSO輸入比對] 13:00~15:00 PV: {tariff_input[(tariff_input['Time']>='13:00')&(tariff_input['Time']<='14:45')]['pv_kw'].tolist()}")
+    print(f"🔎 [PSO輸入比對] 13:00~15:00 critical_load_kw: {tariff_input[(tariff_input['Time']>='13:00')&(tariff_input['Time']<='14:45')]['critical_load_kw'].tolist()}")
 
     pso_result = pso.run_pso(
         tariff_input["critical_load_kw"].to_numpy(),
@@ -383,6 +389,11 @@ def switch_scenario(config_json: dict, server_module):
     回傳 dict，直接被 FastAPI 路由回傳給前端，包含 PSO / Baseline 兩邊的總電價可供主頁對比。
     """
     pricing = config_json["pricing"]
+
+    # 🆕 提早驗證，避免打錯字被靜默當成 three_stage 處理
+    if pricing not in ("two_stage", "three_stage"):
+        raise ValueError(f"pricing 必須是 'two_stage' 或 'three_stage'，收到的是：{pricing}")
+
     outage = config_json.get("outage")
     device_schedules = config_json.get("device_schedules", [])
 

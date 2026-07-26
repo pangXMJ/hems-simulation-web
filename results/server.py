@@ -90,7 +90,7 @@ def switch_scenario(config: dict):
         "pricing": "two_stage",
         "outage": {"start_time": "13:00", "end_time": "15:00"},   # 沒勾選就傳 null
         "device_schedules": [
-            {"column": "l1_airc_abn", "start_time": "14:00", "end_time": "16:00", "on_power_w": 1.2}
+            {"column": "l1_airc_abn", "start_time": "14:00", "end_time": "16:00", "on_power_kw": 1.2}
         ]
     }
     這是同步處理：前端打這支 API 會等到整個「寫CSV → PSO → 離線驗證(PSO版+baseline對比)
@@ -235,6 +235,7 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
 
     total_powers = dss.CktElement.TotalPowers()
     bess_kw = abs(total_powers[0]) if total_powers else 0.0
+    
     currents_mag = dss.CktElement.CurrentsMagAng()
     bess_amp = round(currents_mag[0], 2) if currents_mag else 0.0
 
@@ -301,7 +302,7 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
     floor3_loads = [
         {"id": "f3_dev_1", "name": "3F 洗衣機(EP)", "dss_name": "Load.ep_washer_an"},
         {"id": "f3_dev_2", "name": "3F 烘衣機(EP)", "dss_name": "Load.ep_dryer_bn"},
-        {"id": "f3_dev_3", "name": "3F 加壓馬達(EP)", "dss_name": "Load.boosterpump_abn"},
+        {"id": "f3_dev_3", "name": "3F 加壓馬達(EP)", "dss_name": "Load.ep_boosterpump_abn"},
         {"id": "f3_dev_4", "name": "3F 照明 1(EP)", "dss_name": "Load.ep_3f_lighting1_an"},
         {"id": "f3_dev_5", "name": "3F 照明 2(EP)", "dss_name": "Load.ep_3f_lighting2_bn"},
         {"id": "f3_dev_6", "name": "3F 冷氣(L3)", "dss_name": "Load.l3_airc_abn"},

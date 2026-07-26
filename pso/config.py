@@ -24,9 +24,9 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data" / "01_raw"
 RESULT_DIR = BASE_DIR / "data" / "04_optimized_pso"
 
-LOAD_CSV_PATH = DATA_DIR / "LoadShapes_All_Nodes_15min_kw.csv"
+LOAD_CSV_PATH = DATA_DIR / "LoadShapes_All_Nodes_15min.csv"
 PV_CSV_PATH = DATA_DIR / "pv_curve_15min.csv"
-TARIFF_CSV_PATH = DATA_DIR / "electricity_tariffs_2tage_and_3tage.csv"
+TARIFF_CSV_PATH = DATA_DIR / "electricity_tariffs_2tage_and_3tage_UTF-8.csv"
 
 
 # 功率單位注意事項：
