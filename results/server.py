@@ -25,6 +25,9 @@ SERVER_DIR = os.path.join(PROJECT_ROOT, "results")
 
 RAW_DATA_DIR = os.path.join(PROJECT_ROOT, "data", "01_raw")
 PSO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "04_optimized_pso")
+CURRENT_SCENARIO = {"pricing": "two_stage", "outage": None}
+CURRENT_COST_SUMMARY = {"pso_cost": None, "baseline_cost": None, "savings": None}
+SAMPLE_DIR = os.path.join(PROJECT_ROOT, "data", "sample")
 
 if OPENDSS_DIR not in sys.path:
     sys.path.append(OPENDSS_DIR)
@@ -101,6 +104,53 @@ def switch_scenario(config: dict):
     return result
 
 
+@app.get("/api/daily_summary")
+def get_daily_summary(pricing: str = "two_stage"):
+    schedule_filename = (
+        "battery_usage_two_stage_summer_weekday_15min.csv" if pricing == "two_stage"
+        else "battery_usage_three_stage_summer_weekday_15min.csv"
+    )
+    df_pso_history = pd.read_csv(os.path.join(SAMPLE_DIR, "Pso_History.csv"))
+    df_pso_bess = pd.read_csv(os.path.join(SAMPLE_DIR, "Pso_bess_status.csv"))
+    df_baseline_bess = pd.read_csv(os.path.join(SAMPLE_DIR, "Baseline_bess_status.csv"))
+    df_ideal_schedule = pd.read_csv(os.path.join(PSO_OUTPUT_DIR, schedule_filename))
+    df_pv = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))
+    df_meter = pd.read_csv(os.path.join(SAMPLE_DIR, "Pso_All_meter.csv"))
+
+    floor_devices = {}
+    for floor in ["floor1", "floor2", "floor3"]:
+        floor_devices[floor] = pd.read_csv(
+            os.path.join(SAMPLE_DIR, f"Pso_{floor}_devices.csv")
+        ).to_dict(orient="records")
+
+    line_loss_kw = (
+        df_pso_history["線路損失(kW)"].tolist()
+        if "線路損失(kW)" in df_pso_history.columns else []
+    )
+
+    grid_kwh = df_meter["總電錶T_當前累積功率(kWh)"].to_numpy()
+    grid_kwh_diff = [grid_kwh[0]] + list(grid_kwh[1:] - grid_kwh[:-1])
+    grid_power_kw = [round(v / 0.25, 4) for v in grid_kwh_diff]
+
+    return {
+        "time_labels": df_pso_history["Time"].tolist(),
+        "floor_devices": floor_devices,
+        "line_loss_kw": line_loss_kw,
+        "pv_kw": (df_pv["pv_kw"] / 1000.0).tolist(),
+        "grid_power_kw": grid_power_kw,
+        "ideal_schedule": df_ideal_schedule[
+            ["Time", "battery_power_kw", "battery_status",
+             "battery_energy_change_kwh", "battery_energy_kwh", "soc_percent"]
+        ].to_dict(orient="list"),
+        "pso_actual": df_pso_bess[["Time", "battery_power_kw", "soc"]].to_dict(orient="list"),
+        "baseline_actual": df_baseline_bess[["Time", "battery_power_kw", "soc"]].to_dict(orient="list"),
+    }
+
+@app.get("/api/current_scenario")
+def get_current_scenario():
+    return {**CURRENT_SCENARIO, **CURRENT_COST_SUMMARY}
+
+
 outage_start_step = -1
 outage_end_step = -1
 
@@ -158,10 +208,16 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
     # ==========================================
     if is_island_mode:
         dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
+        dss.Text.Command("Edit Line.home1F enabled=no")   # 🆕 切斷 L1
+        dss.Text.Command("Edit Line.home2F enabled=no")   # 🆕 切斷 L2
+        dss.Text.Command("Edit Line.home3F enabled=no")   # 🆕 切斷 L3
         dss.Text.Command("Edit Vsource.BESS_GFM_L1 phases=1 bus1=EP_panel.1 basekv=0.11 pu=1.0 angle=0 enabled=yes")
         dss.Text.Command("Edit Vsource.BESS_GFM_L2 phases=1 bus1=EP_panel.2 basekv=0.11 pu=1.0 angle=180 enabled=yes")
     else:
         dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
+        dss.Text.Command("Edit Line.home1F enabled=yes")   # 🆕 恢復 L1
+        dss.Text.Command("Edit Line.home2F enabled=yes")   # 🆕 恢復 L2
+        dss.Text.Command("Edit Line.home3F enabled=yes")   # 🆕 恢復 L3
         dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
         dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
 

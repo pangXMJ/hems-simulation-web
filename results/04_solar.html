@@ -9,7 +9,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-/* 基礎樣式 */
 :root{ --bg:#050506; --bg-2:#0a0a0b; --card:#121214; --line:rgba(255,255,255,0.09); --line-soft:rgba(255,255,255,0.05); --white:#f3f2ee; --dim:#8a8a90; --faint:#4d4d52; --accent:#c8ff4d; --accent-dim:rgba(200,255,77,0.10); --accent-line:rgba(200,255,77,0.35); --off:#ff5a5a; --solar:#FFD700; }
 *{box-sizing:border-box;}
 body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','Noto Sans TC',sans-serif; overflow-x:hidden; }
@@ -77,20 +76,14 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
     <div class="card" style="width: 100%;">
       <p class="chart-label">LIVE PV GENERATION TREND (kW)</p>
       <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:24px;">
-        
-        <!-- 左側：大標題 -->
         <h2 style="font-family:'Noto Sans TC'; margin:0; font-size:24px;">即時發電量曲線</h2>
-        
-        <!-- 右側：數值顯示區 -->
         <div style="display:flex; gap:40px; text-align:right;">
-            <!-- 即時功率區塊 -->
             <div>
                 <div style="font-family:'Noto Sans TC'; font-size:16px; color:var(--faint); margin-bottom:8px; font-weight:bold;">即時功率</div>
                 <div style="font-family:'Bebas Neue'; font-size:42px; color:var(--solar); line-height: 1;" id="currentPowerText">
                     0.00 <span style="font-size:20px; color:var(--faint);">kW</span>
                 </div>
             </div>
-            <!-- 累積發電量區塊 -->
             <div>
                 <div style="font-family:'Noto Sans TC'; font-size:16px; color:var(--faint); margin-bottom:8px; font-weight:bold;">總發電量</div>
                 <div style="font-family:'Bebas Neue'; font-size:42px; color:var(--solar); line-height: 1;" id="cumulativePowerText">
@@ -108,8 +101,6 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
     <div class="card" style="width: 100%;">
       <p class="chart-label" style="color:var(--faint);">BESS REAL-TIME STATUS</p>
       <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:24px;">
-        
-        <!-- 左側：標題與電池 Icon -->
         <div style="display:flex; align-items:center; gap:15px;">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#4dffb8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect>
@@ -119,24 +110,19 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
           </svg>
           <h2 style="font-family:'Noto Sans TC'; margin:0; font-size:24px;">儲能系統狀態</h2>
         </div>
-        
-        <!-- 右側：數值顯示區 -->
         <div style="display:flex; gap:40px; text-align:right;">
-            <!-- 輸出電流 (A) -->
             <div>
                 <div style="font-family:'Noto Sans TC'; font-size:16px; color:var(--faint); margin-bottom:8px; font-weight:bold;">輸出電流</div>
                 <div style="font-family:'Bebas Neue'; font-size:42px; color:#4dffb8; line-height: 1;" id="bessAmpText">
                     0.00 <span style="font-size:20px; color:var(--faint);">A</span>
                 </div>
             </div>
-            <!-- 輸出功率 (kW) -->
             <div>
                 <div style="font-family:'Noto Sans TC'; font-size:16px; color:var(--faint); margin-bottom:8px; font-weight:bold;">即時功率</div>
                 <div style="font-family:'Bebas Neue'; font-size:42px; color:#4dffb8; line-height: 1;" id="bessPowerText">
                     0.00 <span style="font-size:20px; color:var(--faint);">kW</span>
                 </div>
             </div>
-            <!-- 電池電量 (SoC) -->
             <div>
                 <div style="font-family:'Noto Sans TC'; font-size:16px; color:var(--faint); margin-bottom:8px; font-weight:bold;">剩餘電量 (SoC)</div>
                 <div style="font-family:'Bebas Neue'; font-size:42px; color:#4dffb8; line-height: 1;" id="bessSocText">
@@ -145,7 +131,6 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
             </div>
         </div>
       </div>
-      <!-- 電池電量變化曲線圖 -->
       <canvas id="bessChart" height="120"></canvas>
     </div>
   </div>
@@ -153,7 +138,7 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
 </div>
 
 <footer>
-  HEMS PROTOTYPE — DATA SOURCED FROM API & STATIC CSV
+  HEMS PROTOTYPE — DATA SOURCED FROM LIVE API (OpenDSS Engine)
 </footer>
 
 <script>
@@ -161,65 +146,24 @@ window.addEventListener('scroll', () => {
   document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 40);
 });
 
-// === 全域變數宣告 ===
 let detailChart;
-let pvCurveDB = {}; 
-let solarHistory = { labels: [], data: [] }; 
+let solarHistory = { labels: [], data: [] };
 
 let bessChart;
-let bessHistory = { labels: [], data: [] }; 
+let bessHistory = { labels: [], data: [] };
 
-// ==========================================
-// 1. 初始化空圖表 (太陽能 + 儲能)
-// ==========================================
 function initChart() {
-  // 太陽能圖表
   const ctx = document.getElementById('detailChart').getContext('2d');
   detailChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: [], 
+      labels: [],
       datasets: [{
         label: '太陽能發電量 (kW)',
-        data: [], 
-        borderColor: '#FFD700', 
-        backgroundColor: 'rgba(255, 215, 0, 0.1)', 
-        fill: true,
-        tension: 0.4, 
-        pointRadius: 2, 
-        borderWidth: 2
-      }]
-    },
-    options: {
-      responsive: true,
-      animation: { duration: 0 }, 
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-        y: { 
-          suggestedMax: 10,
-          ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 10 } }, 
-          grid: { color: 'rgba(255,255,255,0.05)' } 
-        }
-      }
-    }
-  });
-
-  // 電池圖表
-  const ctxBess = document.getElementById('bessChart').getContext('2d');
-  bessChart = new Chart(ctxBess, {
-    type: 'line',
-    data: {
-      labels: [], 
-      datasets: [{
-        label: '電池電量 SoC (%)',
-        data: [], 
-        borderColor: '#4dffb8', 
-        backgroundColor: 'rgba(77, 255, 184, 0.1)', 
-        fill: true,
-        tension: 0.4, 
-        pointRadius: 2, 
-        borderWidth: 2
+        data: [],
+        borderColor: '#FFD700',
+        backgroundColor: 'rgba(255, 215, 0, 0.1)',
+        fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2
       }]
     },
     options: {
@@ -228,43 +172,54 @@ function initChart() {
       plugins: { legend: { display: false } },
       scales: {
         x: { ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-        y: { 
-          min: 0, max: 100, 
-          ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 10 } }, 
-          grid: { color: 'rgba(255,255,255,0.05)' } 
-        }
+        y: { suggestedMax: 10, ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+
+  const ctxBess = document.getElementById('bessChart').getContext('2d');
+  bessChart = new Chart(ctxBess, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        label: '電池電量 SoC (%)',
+        data: [],
+        borderColor: '#4dffb8',
+        backgroundColor: 'rgba(77, 255, 184, 0.1)',
+        fill: true, tension: 0.4, pointRadius: 2, borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      animation: { duration: 0 },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { min: 0, max: 100, ticks: { color: '#5a5a60', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
       }
     }
   });
 }
 
-
-
-// ==========================================
-// 3. 接收後端時間並更新圖表 (每秒觸發)
-// ==========================================
-// ==========================================
-// 3. 接收後端時間並讀取 CSV 更新圖表
-// ==========================================
-// 刪除原本的 preloadSolarCSV 相關邏輯
-// 直接修改 fetchLiveGridStatus
-
 async function fetchLiveGridStatus() {
   try {
     const response = await fetch('/api/grid_status');
+    // 🆕 先確認 HTTP 狀態碼，避免 500 時後面的 .json() 產生更難懂的錯誤
+    if (!response.ok) throw new Error(`API 回應異常 (HTTP ${response.status})`);
     const data = await response.json();
 
     if (data.status === 'success') {
-      const timeOnly = data.timestamp.replace('模擬時間 ', '').trim();
-      
-      document.querySelector('.crumb').innerHTML = 
+      // 🆕 server.py 回傳的 timestamp 本身就是 "HH:MM"，沒有 "模擬時間 " 這個前綴，直接用即可
+      const timeOnly = data.timestamp;
+
+      document.querySelector('.crumb').innerHTML =
         `主頁 <span style="opacity:.4">/</span> <b>太陽能系統</b> <span style="color:var(--solar); margin-left:15px; font-weight:bold;">⚡ LIVE: ${timeOnly}</span>`;
 
-      // --- 🌞 太陽能資料更新邏輯 (直接吃 JSON) ---
       if (data.pv) {
-          document.getElementById('currentPowerText').innerHTML = 
+          document.getElementById('currentPowerText').innerHTML =
             `${data.pv.power_kw.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kW</span>`;
-          document.getElementById('cumulativePowerText').innerHTML = 
+          document.getElementById('cumulativePowerText').innerHTML =
             `${data.pv.cumulative_kwh.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kWh</span>`;
 
           solarHistory.labels.push(timeOnly);
@@ -278,13 +233,12 @@ async function fetchLiveGridStatus() {
           detailChart.update();
       }
 
-      // --- 🔋 電池資料更新邏輯 (直接吃 JSON) ---
       if (data.bess) {
-          document.getElementById('bessSocText').innerHTML = 
+          document.getElementById('bessSocText').innerHTML =
               `${data.bess.soc.toFixed(1)} <span style="font-size:20px; color:var(--faint);">%</span>`;
-          document.getElementById('bessPowerText').innerHTML = 
+          document.getElementById('bessPowerText').innerHTML =
               `${data.bess.power_kw.toFixed(2)} <span style="font-size:20px; color:var(--faint);">kW</span>`;
-          document.getElementById('bessAmpText').innerHTML = 
+          document.getElementById('bessAmpText').innerHTML =
               `${data.bess.current_a.toFixed(2)} <span style="font-size:20px; color:var(--faint);">A</span>`;
 
           bessHistory.labels.push(timeOnly);
@@ -303,11 +257,9 @@ async function fetchLiveGridStatus() {
   }
 }
 
-// 啟動點變得超級乾淨
 (async function boot(){
   initChart();
-  // 注意：這裡改為 1000 毫秒
-  setInterval(fetchLiveGridStatus, 1000); 
+  setInterval(fetchLiveGridStatus, 1000);
 })();
 </script>
 </body>

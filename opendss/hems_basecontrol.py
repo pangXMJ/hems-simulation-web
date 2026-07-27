@@ -515,6 +515,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
         row_dict = {"Time": time_str, "Hour": h, "Minute": m}
         row_dict["電池_SOC(%)"] = round(soc, 2)
         row_dict["供電模式"] = "電池供電" if is_island_mode else "市電供電"
+        row_dict["線路損失(kW)"] = round(loss_kw, 4)
   
         # 抓取電壓電流
         for p_name, config in panel_configs.items():

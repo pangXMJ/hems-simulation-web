@@ -108,28 +108,34 @@ def write_load_csv(device_schedules: list):
     df = pd.read_csv(TEMPLATE_LOAD_CSV)
     n_rows = len(df)
 
+
+    device_masks={}
     for dev in device_schedules:
         col = dev["column"]
         if col not in df.columns:
             raise ValueError(f"負載 CSV 沒有這個設備欄位：{col}")
+        if col not in device_masks:
+            device_masks[col] = np.zeros(n_rows)
 
         start_step = _time_to_step(dev["start_time"])
         end_step = _time_to_step(dev["end_time"])
+        if start_step >= end_step:
+            raise ValueError(f"設備 {col} 的開始時間必須早於結束時間（目前 {dev['start_time']} ~ {dev['end_time']}）")
 
         # 🆕 修正單位換算：dev["on_power_kw"] 是使用者從前端輸入的「千瓦」數值，
         #    但 LoadShapes_All_Nodes_15min.csv 本身是「瓦特(W)」為單位的檔案，
         #    所以只有『使用者明確指定的 kW 值』才需要乘 1000 轉成 W；
         #    如果沒傳 on_power_kw，退回用模板裡的最大值當預設 —— 這個預設值本來就
         #    是從 W 單位的模板讀出來的，不需要再轉換，不能跟上面那條路徑共用同一次轉換。
+        
         if "on_power_kw" in dev:
             on_power_w = float(dev["on_power_kw"]) * 1000.0
         else:
             on_power_w = float(df[col].max())
 
-        mask = np.zeros(n_rows)
-        if start_step >= end_step:
-            raise ValueError(f"設備 {col} 的開始時間必須早於結束時間（目前 {dev['start_time']} ~ {dev['end_time']}）")
-        mask[start_step:end_step] = on_power_w
+        device_masks[col][start_step:end_step] = on_power_w
+        
+    for col, mask in device_masks.items():
         df[col] = mask
 
     df.to_csv(ACTIVE_LOAD_CSV, index=False)
@@ -344,7 +350,7 @@ def compute_battery_asset_value(df_history: pd.DataFrame, pricing: str) -> float
 # ==========================================
 # 階段四：重置即時引擎（讓 server.py 常駐的 OpenDSS 讀新設定）
 # ==========================================
-def reset_online_engine(server_module, pricing: str):
+def reset_online_engine(server_module, pricing: str, outage: dict | None = None,outage_start_step: int = -1, outage_end_step: int = -1):
     """
     server_module：直接把 server.py 這個已載入的模組傳進來，
     這樣可以直接改它的全域變數，不用重啟整個 process。
@@ -366,11 +372,24 @@ def reset_online_engine(server_module, pricing: str):
     df_pso = pd.read_csv(server_module.os.path.join(
         server_module.PSO_OUTPUT_DIR, schedule_filename
     ))
+
+    
     server_module.pso_kw_list = df_pso["battery_power_kw"].tolist()
 
     server_module.startup_event()  # 重建電路
     server_module.current_step = 0
     server_module.is_island_mode = False
+    server_module.outage_start_step = outage_start_step
+    server_module.outage_end_step = outage_end_step
+    server_module.CURRENT_SCENARIO = {"pricing": pricing, "outage": outage}
+    
+   
+
+
+
+
+
+
 
 
 # ==========================================
@@ -468,7 +487,13 @@ def switch_scenario(config_json: dict, server_module):
     savings = round(baseline_adjusted_cost - pso_adjusted_cost, 2)
 
     # --- 階段四：重置即時引擎（只有 PSO 版本會被搬上網站即時展示）---
-    reset_online_engine(server_module, pricing)
+    reset_online_engine(server_module, pricing, outage, outage_start_step, outage_end_step)
+
+    server_module.CURRENT_COST_SUMMARY = {
+        "pso_cost": pso_adjusted_cost,
+        "baseline_cost": baseline_adjusted_cost,
+        "savings": savings,
+}
 
     return {
         "status": "success",
