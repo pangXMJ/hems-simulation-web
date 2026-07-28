@@ -9,6 +9,8 @@ from config import (
     CRITICAL_SHORTAGE_PENALTY_WEIGHT,
     CURTAILMENT_PENALTY_WEIGHT,
     DT,
+    EARLY_STOP_PATIENCE,
+    EARLY_STOP_REL_TOLERANCE,
     ETA_CHARGE,
     ETA_DISCHARGE,
     FINAL_SOC_PENALTY_WEIGHT,
@@ -16,6 +18,7 @@ from config import (
     INERTIA_MIN,
     INITIAL_SOC,
     MAX_ITERATIONS,
+    MIN_ITERATIONS,
     NUM_INTERVALS,
     NUM_PARTICLES,
     OUTAGE_END_INDEX,
@@ -232,7 +235,7 @@ def hems_objective(
 
 
 def run_pso(critical_load_kw, noncritical_load_kw, pv_kw, price_per_kwh):
-    """執行 96 維 PSO，回傳最佳排程、fitness 與收斂曲線。"""
+    """執行 96 維 PSO，回傳最佳排程、fitness 與逐代指標。"""
     _validate_series(
         critical_load_kw,
         noncritical_load_kw,
@@ -275,13 +278,34 @@ def run_pso(critical_load_kw, noncritical_load_kw, pv_kw, price_per_kwh):
 
     before_position = gbest_position.copy()  # PSO 迭代前的最佳位置
     before_fitness = gbest_fitness  # PSO 迭代前的最佳適應值
-    convergence_curve = []  # 每次迭代的最佳適應值紀錄
+
+    def calculate_swarm_diversity():
+        """計算所有粒子與粒子群中心的平均歐氏距離。"""
+        centroid = positions.mean(axis=0)
+        distances = np.linalg.norm(positions - centroid, axis=1)
+        return float(distances.mean())
+
+    iteration_history = [  # iteration=0 代表尚未開始更新粒子的初始狀態
+        {
+            "iteration": 0,
+            "inertia": float(INERTIA_MAX),
+            "gbest_fitness": gbest_fitness,
+            "iteration_best_fitness": float(pbest_fitness.min()),
+            "mean_fitness": float(pbest_fitness.mean()),
+            "std_fitness": float(pbest_fitness.std()),
+            "swarm_diversity": calculate_swarm_diversity(),
+        }
+    ]
+    stopped_early = False
+    stop_reason = f"已達最大迭代次數 {MAX_ITERATIONS}"
+    last_relative_improvement = None
 
     for iteration in range(MAX_ITERATIONS):
         progress = iteration / max(MAX_ITERATIONS - 1, 1)  # 目前迭代進度
         inertia = (  # 線性遞減的慣性權重
             INERTIA_MAX + (INERTIA_MIN - INERTIA_MAX) * progress
         )
+        current_fitness_values = np.empty(NUM_PARTICLES)
 
         for particle in range(NUM_PARTICLES):
             r1 = rng.random(NUM_INTERVALS)  # 個體學習隨機係數
@@ -302,6 +326,7 @@ def run_pso(critical_load_kw, noncritical_load_kw, pv_kw, price_per_kwh):
             )
 
             current_fitness = fitness(positions[particle])  # 目前粒子的適應值
+            current_fitness_values[particle] = current_fitness
             if current_fitness < pbest_fitness[particle]:
                 pbest_fitness[particle] = current_fitness  # 更新個體最佳適應值
                 pbest_positions[particle] = (  # 更新個體最佳位置
@@ -312,12 +337,50 @@ def run_pso(critical_load_kw, noncritical_load_kw, pv_kw, price_per_kwh):
                     gbest_fitness = float(current_fitness)  # 更新全域最佳適應值
                     gbest_position = positions[particle].copy()  # 更新全域最佳位置
 
-        convergence_curve.append(gbest_fitness)
+        iteration_history.append(
+            {
+                "iteration": iteration + 1,
+                "inertia": float(inertia),
+                "gbest_fitness": gbest_fitness,
+                "iteration_best_fitness": float(current_fitness_values.min()),
+                "mean_fitness": float(current_fitness_values.mean()),
+                "std_fitness": float(current_fitness_values.std()),
+                "swarm_diversity": calculate_swarm_diversity(),
+            }
+        )
+
+        actual_iteration = iteration + 1
+        if (
+            actual_iteration >= MIN_ITERATIONS
+            and actual_iteration >= EARLY_STOP_PATIENCE
+        ):
+            previous_gbest = iteration_history[
+                -EARLY_STOP_PATIENCE - 1
+            ]["gbest_fitness"]
+            last_relative_improvement = (
+                previous_gbest - gbest_fitness
+            ) / max(abs(previous_gbest), 1e-12)
+
+            if last_relative_improvement < EARLY_STOP_REL_TOLERANCE:
+                stopped_early = True
+                stop_reason = (
+                    f"最近 {EARLY_STOP_PATIENCE} 代的 gbest_fitness "
+                    f"相對改善率 {last_relative_improvement:.8e} "
+                    f"小於門檻 {EARLY_STOP_REL_TOLERANCE:.8e}"
+                )
+                break
 
     return {
         "before_position": before_position,
         "before_fitness": before_fitness,
         "after_position": gbest_position,
         "after_fitness": gbest_fitness,
-        "convergence_curve": np.asarray(convergence_curve),
+        "convergence_curve": np.asarray(
+            [record["gbest_fitness"] for record in iteration_history]
+        ),
+        "iteration_history": iteration_history,
+        "actual_iterations": len(iteration_history) - 1,
+        "stopped_early": stopped_early,
+        "stop_reason": stop_reason,
+        "last_relative_improvement": last_relative_improvement,
     }

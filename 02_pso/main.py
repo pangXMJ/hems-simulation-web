@@ -10,6 +10,7 @@ from config import (
     CRITICAL_LOAD_COLUMNS,
     CSV_ENCODING,
     INITIAL_SOC,
+    INPUT_POWER_W_TO_KW,
     LOAD_CSV_PATH,
     LOAD_METADATA_COLUMNS,
     NUM_INTERVALS,
@@ -39,12 +40,12 @@ EXPECTED_TIMES = [  # 一天應有的 96 個標準時間字串
 ]
 
 
-def _read_csv(path, data_name):
+def _read_csv(path, data_name, usecols=None):
     """以固定的 UTF-8-SIG 編碼讀取 CSV。"""
     path = Path(path)  # CSV 檔案路徑
     if not path.exists():
         raise FileNotFoundError(f"找不到{data_name}：{path}")
-    return pd.read_csv(path, encoding=CSV_ENCODING)
+    return pd.read_csv(path, encoding=CSV_ENCODING, usecols=usecols)
 
 
 def _read_tariff_csv(path):
@@ -107,7 +108,7 @@ def _to_numeric_columns(df, columns, data_name):
 
 
 def read_load_data(load_csv_path):
-    """讀取設備負載，依實際欄位加總總負載、關鍵負載與非關鍵負載。"""
+    """讀取 W 單位設備負載，轉成 kW 後加總各類負載。"""
     load_df = _validate_and_sort_time(  # 檢查完成的負載資料表
         _read_csv(load_csv_path, "負載 CSV"),
         "負載 CSV",
@@ -134,6 +135,7 @@ def read_load_data(load_csv_path):
     )
     if (load_df[appliance_columns] < 0).any().any():
         raise ValueError("負載功率不可為負數")
+    load_df[appliance_columns] *= INPUT_POWER_W_TO_KW  # W 轉成 kW
 
     result = pd.DataFrame({"Time": load_df["Time"]})  # 整理後的負載資料表
     result["load_kw"] = load_df[appliance_columns].sum(axis=1)  # 總負載功率
@@ -147,9 +149,13 @@ def read_load_data(load_csv_path):
 
 
 def read_pv_data(pv_csv_path):
-    """讀取本次提供的 Time、pv_kw 太陽能資料。"""
+    """讀取原始 W 單位的 pv_kw 欄位，轉成 PSO 使用的 kW。"""
     pv_df = _validate_and_sort_time(  # 檢查完成的太陽能資料表
-        _read_csv(pv_csv_path, "PV CSV"),
+        _read_csv(
+            pv_csv_path,
+            "PV CSV",
+            usecols=lambda column: column in {"Time", "pv_kw"},
+        ),
         "PV CSV",
     )
     if "pv_kw" not in pv_df.columns:
@@ -162,6 +168,7 @@ def read_pv_data(pv_csv_path):
     )
     if (pv_df["pv_kw"] < 0).any():
         raise ValueError("pv_kw 不可為負數")
+    pv_df["pv_kw"] *= INPUT_POWER_W_TO_KW  # CSV 原始值為 W，讀取後轉成 kW
     return pv_df[["Time", "pv_kw"]]
 
 
@@ -335,16 +342,37 @@ def run(load_csv_path, pv_csv_path, tariff_csv_path, output_dir):
             encoding=CSV_ENCODING,
             float_format="%.6f",
         )
+        iteration_history = pd.DataFrame(
+            pso_result["iteration_history"]
+        )  # PSO 初始狀態與每次迭代指標
+        iteration_output_path = (
+            output_dir
+            / (
+                f"pso_iteration_history_{tariff_type}_"
+                f"{TARIFF_SEASON}_{TARIFF_DAY_TYPE}_15min.csv"
+            )
+        )
+        iteration_history.to_csv(
+            iteration_output_path,
+            index=False,
+            encoding=CSV_ENCODING,
+            float_format="%.10f",
+        )
         all_results[tariff_type] = {  # 保存目前電價方案的結果
             "battery_result": battery_result,
+            "iteration_history": iteration_history,
             "pso_result": pso_result,
             "output_path": output_path,
+            "iteration_output_path": iteration_output_path,
         }
 
         print(
             f"{tariff_type}: fitness={pso_result['after_fitness']:.6f}, "
+            f"iterations={pso_result['actual_iterations']}, "
+            f"stopped_early={pso_result['stopped_early']}, "
             f"final_soc={battery_result['soc_percent'].iloc[-1]:.6f}%, "
-            f"output={output_path}"
+            f"output={output_path}, "
+            f"iteration_output={iteration_output_path}"
         )
 
     print(f"停電時段：{OUTAGE_START_TIME}～{OUTAGE_END_TIME}（結束時間不包含）")

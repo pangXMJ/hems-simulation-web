@@ -20,13 +20,15 @@ from pathlib import Path
 # │  ├─ pv_curve_15min.csv
 # │  └─ electricity_tariffs_2tage_and_3tage.csv
 # └─ results/
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data" / "01_raw"
 RESULT_DIR = BASE_DIR / "data" / "04_optimized_pso"
 
-LOAD_CSV_PATH = DATA_DIR / "LoadShapes_All_Nodes_15min_kw.csv"
+LOAD_CSV_PATH = DATA_DIR / "LoadShapes_All_Nodes_15min.csv"
 PV_CSV_PATH = DATA_DIR / "pv_curve_15min.csv"
-TARIFF_CSV_PATH = DATA_DIR / "electricity_tariffs_2tage_and_3tage.csv"
+TARIFF_CSV_PATH = DATA_DIR / "electricity_tariffs_2tage_and_3tage_UTF-8.csv"
+CSV_ENCODING = "utf-8-sig"  # 可讀取 UTF-8 與含 BOM 的 UTF-8 CSV
+INPUT_POWER_W_TO_KW = 0.001  # 原始負載與 PV CSV 的 W 轉成 PSO 使用的 kW
 
 TARIFF_TYPES = ("two_stage", "three_stage")
 TARIFF_SEASON = "summer"
@@ -89,7 +91,7 @@ CRITICAL_LOAD_COLUMNS = [  # 停電時保留供電的關鍵負載欄位
     "ep_3f_lighting2_bn",  # 3 樓照明 2
     "ep_1f_wifi_an",  # Wi-Fi 路由器
     "ep_1f_WaterHeater_abn",  # 電熱水器
-    "boosterpump_abn",  # 加壓馬達
+    "ep_boosterpump_abn",  # 加壓馬達
     "ep_kitchen_bn",  # 廚房插座
     "ep_2f_socket1_an",  # 2 樓插座 1
     "ep_2f_socket2_bn",  # 2 樓插座 2
@@ -142,6 +144,9 @@ CURTAILMENT_PENALTY_WEIGHT = 0.0  # 多餘電力棄電懲罰權重
 RANDOM_SEED = 42  # PSO 隨機種子
 NUM_PARTICLES = 50  # PSO 粒子數量
 MAX_ITERATIONS = 500  # PSO 最大迭代次數
+MIN_ITERATIONS = 100  # 啟用提前停止前至少執行的迭代次數
+EARLY_STOP_PATIENCE = 50  # 提前停止使用的歷史比較區間
+EARLY_STOP_REL_TOLERANCE = 1e-5  # 最近比較區間的最小相對改善率
 INERTIA_MAX = 0.90  # 慣性權重最大值
 INERTIA_MIN = 0.40  # 慣性權重最小值
 COGNITIVE_COEFFICIENT = 1.50  # 個體最佳學習係數
