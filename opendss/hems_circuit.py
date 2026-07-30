@@ -141,7 +141,7 @@ def build_circuit():
         # kWhrated 電池的總能量容量（電量），即 20 度電。pf=1.0:
         # 預設功因為 1.0。state=IDLING:
         # 初始狀態設定。IDLING: 待機中，既不充電也不放電。後續可透過指令改為 CHARGING（充電）或 DISCHARGING（放電）。
-        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 %stored=50 %reserve=20 %IdlingKw=0 %EffCharge=95 %EffDischarge=95 DispMode=External",
+        "New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 %stored=50 %reserve=0 %IdlingKw=0 %EffCharge=95 %EffDischarge=95 DispMode=External",
         
 
 

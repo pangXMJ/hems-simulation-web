@@ -203,6 +203,11 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
     else:
         is_island_mode = False
 
+    dss.Circuit.SetActiveElement("Storage.Battery_Sys")
+    soc_str_for_island_check = dss.Properties.Value("%stored")
+    soc_for_island_check = float(soc_str_for_island_check.replace('%', '').strip()) if soc_str_for_island_check else 0.0
+
+
     # ==========================================
     # ATS 物理開關切換與孤島電壓源
     # ==========================================
@@ -211,8 +216,14 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
         dss.Text.Command("Edit Line.home1F enabled=no")   # 🆕 切斷 L1
         dss.Text.Command("Edit Line.home2F enabled=no")   # 🆕 切斷 L2
         dss.Text.Command("Edit Line.home3F enabled=no")   # 🆕 切斷 L3
-        dss.Text.Command("Edit Vsource.BESS_GFM_L1 phases=1 bus1=EP_panel.1 basekv=0.11 pu=1.0 angle=0 enabled=yes")
-        dss.Text.Command("Edit Vsource.BESS_GFM_L2 phases=1 bus1=EP_panel.2 basekv=0.11 pu=1.0 angle=180 enabled=yes")
+
+        if soc_for_island_check <= 1.0:
+             # 🆕 電池撐不住了：連孤島電壓源都關掉，讓 EP 面板真實反映「微電網崩潰、沒電」
+            dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
+            dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
+        else:
+            dss.Text.Command("Edit Vsource.BESS_GFM_L1 phases=1 bus1=EP_panel.1 basekv=0.11 pu=1.0 angle=0 enabled=yes")
+            dss.Text.Command("Edit Vsource.BESS_GFM_L2 phases=1 bus1=EP_panel.2 basekv=0.11 pu=1.0 angle=180 enabled=yes")
     else:
         dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
         dss.Text.Command("Edit Line.home1F enabled=yes")   # 🆕 恢復 L1
@@ -220,6 +231,10 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
         dss.Text.Command("Edit Line.home3F enabled=yes")   # 🆕 恢復 L3
         dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
         dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
+
+
+    dss.Circuit.SetActiveElement("Line.home1F")
+    print(f"🔎 [線路狀態確認] is_island_mode={is_island_mode}, home1F 是否啟用={dss.CktElement.Enabled()}")    
 
     # 每次呼叫都強制奪取外部控制權
     dss.Text.Command("Edit Storage.Battery_Sys DispMode=External")

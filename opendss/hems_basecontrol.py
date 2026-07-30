@@ -181,6 +181,17 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
             
             dss.Text.Command("Edit Load.DumpLoad kW=0.0")
             print(f"🔌 [{time_str}] 市電恢復！結束孤島模式，重新併入大電網。")
+        if is_island_mode:
+            dss.Circuit.SetActiveElement("Storage.Battery_Sys")
+            soc_str_for_island_check = dss.Properties.Value("%stored")
+            soc_for_island_check = float(soc_str_for_island_check.replace('%', '').strip()) if soc_str_for_island_check else 0.0
+
+            if soc_for_island_check <= 1.0:
+                dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
+                dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
+            else:
+                dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=yes")
+                dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=yes")    
 
         #  初始化電池狀態變數，抓取狀態與計算淨功率
         soc = 0.0

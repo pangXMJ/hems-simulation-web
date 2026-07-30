@@ -90,8 +90,10 @@ def decide_battery_action(
             # 【危機：太陽能不足，需電池放電】
             result["dump_load_kw"] = 0.0
             result["pv_pmpp"] = None
+            ISLAND_SOC_FLOOR = 1.0
 
-            if soc <= 20.0:
+
+            if soc <= ISLAND_SOC_FLOOR:
                 result["battery_state"] = "IDLING"
                 result["logs"].append(f"💀 [{time_str}] 電池耗盡！無法支撐負載，微電網崩潰。")
             else:
