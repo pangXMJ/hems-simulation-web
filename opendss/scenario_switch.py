@@ -67,7 +67,9 @@ if str(PSO_CODE_DIR) not in sys.path:
     sys.path.append(str(PSO_CODE_DIR))
 
 TEMPLATE_LOAD_CSV = RAW_DATA_DIR / "LoadShapes_All_Nodes_15min_template.csv"  # 永久保留的基準模板
+PATTERN_LOAD_CSV = RAW_DATA_DIR / "LoadShapes_All_pattern.csv"                # 提供負載曲線
 ACTIVE_LOAD_CSV = RAW_DATA_DIR / "LoadShapes_All_Nodes_15min.csv"             # 設備控制頁面改寫、PSO/離線驗證/即時引擎共用讀取
+
 
 BATTERY_SCHEDULE_FILENAMES = {
     "two_stage": "battery_usage_two_stage_summer_weekday_15min.csv",
@@ -85,6 +87,34 @@ def _time_to_step(time_str: str) -> int:
     return h * 4 + (m // 15)
 
 
+def _build_pattern_baseline() -> pd.DataFrame:
+    """讀 template（額定最大值）+ pattern（0~1 日用電曲線),逐欄相乘出有真實形狀的基準負載"""
+    if not TEMPLATE_LOAD_CSV.exists():
+        raise FileNotFoundError(f"找不到負載模板：{TEMPLATE_LOAD_CSV}")
+    if not PATTERN_LOAD_CSV.exists():
+        raise FileNotFoundError(f"找不到日用電曲線檔：{PATTERN_LOAD_CSV}")
+
+    df_template = pd.read_csv(TEMPLATE_LOAD_CSV)
+    df_pattern = pd.read_csv(PATTERN_LOAD_CSV)
+
+    if len(df_template) != len(df_pattern):
+        raise ValueError(f"template（{len(df_template)}列）跟 pattern（{len(df_pattern)}列）筆數不一致")
+    if not (df_template["Time"].reset_index(drop=True) == df_pattern["Time"].reset_index(drop=True)).all():
+        raise ValueError("template 跟 pattern 的 Time 欄位對不上")
+
+    device_cols = [c for c in df_template.columns if c not in ("Time", "Hour", "Minute")]
+    pattern_cols = [c for c in df_pattern.columns if c not in ("Time", "Hour", "Minute")]
+    missing = set(device_cols) - set(pattern_cols)
+    extra = set(pattern_cols) - set(device_cols)
+    if missing or extra:
+        raise ValueError(f"pattern.csv 欄位對不上：缺 {missing or '無'}，多 {extra or '無'}")
+
+    df_baseline = df_template.copy()
+    df_baseline[device_cols] = df_template[device_cols].to_numpy() * df_pattern[device_cols].to_numpy()
+    return df_baseline
+
+
+
 def write_load_csv(device_schedules: list):
     """
     device_schedules 範例：
@@ -98,14 +128,8 @@ def write_load_csv(device_schedules: list):
     🆕 寫入的 ACTIVE_LOAD_CSV 本來就在共用的 data/01_raw 資料夾，
     hems_basecontrol.py / server.py 會直接讀到同一份，不用另外複製。
     """
-    if not TEMPLATE_LOAD_CSV.exists():
-        raise FileNotFoundError(
-            f"找不到負載模板：{TEMPLATE_LOAD_CSV}\n"
-            f"請先把現有的 LoadShapes_All_Nodes_15min.csv 備份一份改成這個檔名，"
-            f"當作『沒有任何設備控制介入時』的基準模板。"
-        )
 
-    df = pd.read_csv(TEMPLATE_LOAD_CSV)
+    df = _build_pattern_baseline()
     n_rows = len(df)
 
 

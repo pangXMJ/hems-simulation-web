@@ -57,6 +57,12 @@ DUMP_LOAD_MAX_KW = 2.0
 df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))
 pv_w_list = df_pv_brain['pv_kw'].tolist()
 
+# 🆕 開機當下就先用 template x pattern 把 ACTIVE_LOAD_CSV seed 成正確版本，
+#    不用等使用者第一次操作設備控制頁面觸發 switch_scenario() 才被覆蓋過去，
+#    避免「剛開機、還沒人操作」這段時間讀到舊的/沒套用曲線的負載資料。
+scenario_switch.write_load_csv(device_schedules=[])
+
+
 df_loads_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "LoadShapes_All_Nodes_15min.csv"))
 load_cols = [c for c in df_loads_brain.columns if c not in ['Time', 'Hour', 'Minute']]
 total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()

@@ -56,7 +56,7 @@ def build_circuit():
 # ==========================================
         "Set DefaultBaseFrequency=60",
         # 台電 11.4kV 三相電源
-        "New Circuit.PPC basekv=11.4 pu=1.0 phases=3 bus1=SourceBus",
+        "New Circuit.PTC basekv=11.4 pu=1.0 phases=3 bus1=SourceBus",
     ]
     commands.extend(loadshape_commands)
 
