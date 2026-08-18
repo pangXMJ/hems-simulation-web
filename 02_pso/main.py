@@ -273,6 +273,7 @@ def simulate_best_schedule(input_data, requested_schedule_kw):
         actual_bess_kw = limit_bess_power_by_soc(  # SOC 限制後的實際電池功率
             current_energy_kwh,
             constrained_request_kw,
+            outage,
         )
         energy_change_kwh = battery_energy_change_kwh(  # 此時段電池能量變化
             actual_bess_kw

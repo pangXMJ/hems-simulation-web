@@ -22,6 +22,7 @@ from config import (
     NUM_INTERVALS,
     NUM_PARTICLES,
     OUTAGE_END_INDEX,
+    OUTAGE_SOC_MIN,
     OUTAGE_START_INDEX,
     P_BESS_MAX_KW,
     RANDOM_SEED,
@@ -47,12 +48,13 @@ def battery_energy_change_kwh(actual_bess_kw):
     return 0.0
 
 
-def limit_bess_power_by_soc(current_energy_kwh, requested_bess_kw):
-    """將要求功率限制在額定功率及 SOC 20%～90% 的硬限制內。"""
+def limit_bess_power_by_soc(current_energy_kwh, requested_bess_kw, outage=False):
+    """依供電狀態套用 SOC 下限，並限制在電池額定功率與 SOC 上限內。"""
     requested_bess_kw = float(  # 額定功率限制後的要求功率
         np.clip(requested_bess_kw, -P_BESS_MAX_KW, P_BESS_MAX_KW)
     )
-    min_energy_kwh = SOC_MIN * BESS_CAPACITY_KWH  # SOC 下限對應的最低能量
+    minimum_soc = OUTAGE_SOC_MIN if outage else SOC_MIN  # 目前供電狀態的 SOC 下限
+    min_energy_kwh = minimum_soc * BESS_CAPACITY_KWH  # SOC 下限對應的最低能量
     max_energy_kwh = SOC_MAX * BESS_CAPACITY_KWH  # SOC 上限對應的最高能量
 
     if requested_bess_kw > 0:  # 放電
@@ -192,6 +194,7 @@ def hems_objective(
         actual_bess_kw = limit_bess_power_by_soc(  # SOC 限制後的實際電池功率
             current_energy_kwh,
             requested_bess_kw,
+            outage,
         )
         current_energy_kwh += battery_energy_change_kwh(  # 更新目前電池能量
             actual_bess_kw
