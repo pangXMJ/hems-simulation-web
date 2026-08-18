@@ -86,6 +86,20 @@ def _time_to_step(time_str: str) -> int:
     h, m = map(int, time_str.split(":"))
     return h * 4 + (m // 15)
 
+CYCLE_PROFILES = {
+    "ep_washer_an": [1.0, 0.8, 0.5, 0.5, 0.8, 0.6, 0.2, 0.0],
+    "ep_dryer_bn":  [0.0, 0.9, 1.0, 1.0, 0.85, 0.4, 0.0],
+}
+
+def _resample_profile(profile: list, target_len: int) -> np.ndarray:
+    profile = np.asarray(profile, dtype=float)
+    if target_len <= 0:
+        return np.array([])
+    if len(profile) == 1:
+        return np.full(target_len, profile[0])
+    x_old = np.linspace(0, 1, len(profile))
+    x_new = np.linspace(0, 1, target_len)
+    return np.interp(x_new, x_old, profile)
 
 def _build_pattern_baseline() -> pd.DataFrame:
     """讀 template（額定最大值）+ pattern（0~1 日用電曲線),逐欄相乘出有真實形狀的基準負載"""
@@ -116,56 +130,34 @@ def _build_pattern_baseline() -> pd.DataFrame:
 
 
 def write_load_csv(device_schedules: list):
-    """
-    device_schedules 範例：
-    [
-        {"column": "l1_airc_abn", "start_time": "14:00", "end_time": "16:00", "on_power_kw": 1.2},
-        ...
-    ]
-    邏輯：該設備欄位在指定時段內填入 on_power_kw（強制開啟),其餘時間全部填 0，
-    完全覆蓋掉模板裡原本的用電模式（符合規格書「其餘時間皆為 OFF (0)」的定義）。
-
-    🆕 寫入的 ACTIVE_LOAD_CSV 本來就在共用的 data/01_raw 資料夾，
-    hems_basecontrol.py / server.py 會直接讀到同一份，不用另外複製。
-    """
-
     df = _build_pattern_baseline()
-    n_rows = len(df)
+    df_template = pd.read_csv(TEMPLATE_LOAD_CSV)  # 額定功率一律從這裡查，不用 df.max()
 
-
-    device_masks={}
     for dev in device_schedules:
         col = dev["column"]
         if col not in df.columns:
             raise ValueError(f"負載 CSV 沒有這個設備欄位：{col}")
-        if col not in device_masks:
-            device_masks[col] = np.zeros(n_rows)
 
         start_step = _time_to_step(dev["start_time"])
         end_step = _time_to_step(dev["end_time"])
         if start_step >= end_step:
             raise ValueError(f"設備 {col} 的開始時間必須早於結束時間（目前 {dev['start_time']} ~ {dev['end_time']}）")
 
-        # 🆕 修正單位換算：dev["on_power_kw"] 是使用者從前端輸入的「千瓦」數值，
-        #    但 LoadShapes_All_Nodes_15min.csv 本身是「瓦特(W)」為單位的檔案，
-        #    所以只有『使用者明確指定的 kW 值』才需要乘 1000 轉成 W；
-        #    如果沒傳 on_power_kw，退回用模板裡的最大值當預設 —— 這個預設值本來就
-        #    是從 W 單位的模板讀出來的，不需要再轉換，不能跟上面那條路徑共用同一次轉換。
-        
         if "on_power_kw" in dev:
-            on_power_w = float(dev["on_power_kw"]) * 1000.0
+            rated_power_w = float(dev["on_power_kw"]) * 1000.0
         else:
-            on_power_w = float(df[col].max())
+            rated_power_w = float(df_template[col].max())
 
-        device_masks[col][start_step:end_step] = on_power_w
-        
-    for col, mask in device_masks.items():
-        df[col] = mask
+        window_len = end_step - start_step
+
+        if col in CYCLE_PROFILES:
+            values = _resample_profile(CYCLE_PROFILES[col], window_len) * rated_power_w
+        else:
+            values = np.full(window_len, rated_power_w)
+
+        df.iloc[start_step:end_step, df.columns.get_loc(col)] = values
 
     df.to_csv(ACTIVE_LOAD_CSV, index=False)
-    # 🆕 不用再複製了：ACTIVE_LOAD_CSV 本來就在 hems_basecontrol.py / server.py 讀取的
-    #    同一個共用 data/01_raw 資料夾裡，三邊本來就會讀到同一份。
-
     return ACTIVE_LOAD_CSV
 
 

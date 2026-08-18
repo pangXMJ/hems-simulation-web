@@ -19,6 +19,7 @@ PSO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "04_optimized_pso")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "sample")
 
 
+
 def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,battery_schedule_filename='battery_usage_two_stage_summer_weekday_15min.csv'):
     """
     執行全日模擬引擎

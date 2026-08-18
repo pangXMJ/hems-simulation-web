@@ -96,6 +96,25 @@ body{
 .chart-container { position: relative; width: 100%; height: 350px; }
 .chart-container.small { height: 180px; }
 
+
+.floor-tabs{display:flex; gap:8px;}
+.floor-tab{all:unset; cursor:pointer; font-family:'Space Mono'; font-size:11.5px; letter-spacing:1px; padding:7px 16px; border:1px solid var(--line); border-radius:20px; color:var(--dim); transition:.2s;}
+.floor-tab:hover{color:var(--white); border-color:var(--tab-color);}
+.floor-tab.active{color:#050506; background:var(--tab-color); border-color:var(--tab-color); font-weight:700;}
+
+.device-accordion{margin-top:20px; border-top:1px solid var(--line);}
+.device-row{border-bottom:1px solid var(--line-soft);}
+.device-row-head{all:unset; display:flex; align-items:center; justify-content:space-between; width:100%; padding:14px 4px; cursor:pointer; box-sizing:border-box;}
+.device-row-head:hover .device-name{color:var(--white);}
+.device-name{font-size:13.5px; color:var(--dim); transition:.2s;}
+.device-dot{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:9px; vertical-align:middle;}
+.device-kwh{font-family:'Space Mono'; font-size:12px; color:var(--faint); display:flex; align-items:center; gap:10px;}
+.device-caret{display:inline-block; transition:transform .25s; color:var(--faint);}
+.device-row.open .device-caret{transform:rotate(90deg);}
+.device-detail{max-height:0; overflow:hidden; transition:max-height .3s ease;}
+.device-row.open .device-detail{max-height:220px;}
+.device-detail-inner{padding:6px 4px 20px;}
+
 .mode-status-container{display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line); padding:8px 16px; border-radius:20px;}
 .mode-status-dot{width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 3px var(--accent-dim);}
 .mode-status-text{font-family:'Space Mono'; font-size:11px; letter-spacing:1px; color:var(--dim);}
@@ -199,6 +218,8 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
     <div class="scroll-cue"><span>SCROLL</span><div class="bar"></div></div>
   </section>
 
+  
+
  <!-- ===== Section 01: 模擬與負載 ===== -->
   <div class="section" style="padding-top: 0;">
     <div class="section-head reveal">
@@ -216,6 +237,8 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
       <div class="chart-container" style="height: 450px;"><canvas id="loadChart"></canvas></div>
     </div>
 
+      
+
     <!-- 2. 滿版：電費計算橫幅 -->
     <div class="card reveal" style="margin-bottom: 24px; padding-top: 40px; padding-bottom: 40px;">
       <div class="stat-row" style="justify-content: flex-start; gap: 10vw;">
@@ -224,6 +247,19 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
         <div><div class="spec-label">省下金額</div><div class="big" id="costDelta">--</div></div>
       </div>
     </div>
+
+    <div class="card reveal" style="margin-bottom: 24px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:16px;">
+      <p class="chart-label" style="margin:0;">FLOOR DETAIL — 設備明細</p>
+      <div class="floor-tabs" id="floorTabs">
+        <button class="floor-tab active" data-floor="floor1" style="--tab-color:#5a96ff;">1F 一樓</button>
+        <button class="floor-tab" data-floor="floor2" style="--tab-color:#c8ff4d;">2F 二樓</button>
+        <button class="floor-tab" data-floor="floor3" style="--tab-color:#ffb454;">3F 三樓</button>
+      </div>
+    </div>
+    <div class="chart-container" style="height:280px;"><canvas id="floorChart"></canvas></div>
+    <div class="device-accordion" id="deviceAccordion"></div>
+  </div>
 
     <!-- 3. 滿版：PV 太陽能圖 -->
     <div class="card reveal" style="margin-bottom: 24px;">
@@ -431,6 +467,117 @@ async function initHome(){
         }
       })
     });
+
+// 🆕 樓層設備明細（可展開圖表）
+const floorHues = { floor1: 215, floor2: 80, floor3: 32 }; // 藍/綠/橘 對應色相
+let floorDeviceGroups = {};
+let currentFloor = 'floor1';
+
+function buildFloorDeviceGroups(floor) {
+  if (floorDeviceGroups[floor]) return floorDeviceGroups[floor];
+  const rows = (data.floor_devices && data.floor_devices[floor]) || [];
+  const groups = {};
+  rows.forEach(row => {
+    if (!groups[row.id]) groups[row.id] = { name: row.name, powersByTime: {} };
+    groups[row.id].powersByTime[row.Time] = row.power_w || 0;
+  });
+  floorDeviceGroups[floor] = groups;
+  return groups;
+}
+
+// 🆕 同樓層固定色相，靠明暗深淺分開每個設備，而不是全部混一種顏色
+function getFloorDeviceColor(floor, index, total) {
+  const hue = floorHues[floor];
+  const lightness = 35 + (index * 40 / Math.max(total - 1, 1)); // 35%~75%
+  return `hsl(${hue}, 70%, ${lightness}%)`;
+}
+
+function renderFloorChart(floor) {
+  const groups = buildFloorDeviceGroups(floor);
+  const ids = Object.keys(groups);
+
+  const datasets = ids.map((id, i) => ({
+    label: groups[id].name,
+    data: timeLabels.map(t => (groups[id].powersByTime[t] || 0) / 1000),
+    backgroundColor: getFloorDeviceColor(floor, i, ids.length),
+    stack: 'FloorStack',
+    barPercentage: 1.0, categoryPercentage: 1.0
+  }));
+
+  if (charts.floorChart) charts.floorChart.destroy();
+  charts.floorChart = new Chart(document.getElementById('floorChart'), {
+    type: 'bar',
+    data: { labels: timeLabels, datasets },
+    options: Object.assign({}, chartBase, {
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false } }, // 圖例交給下面的可展開清單（清單本身有色塊）
+      scales: {
+        x: { stacked: true, ticks: { color: '#5a5a60' } },
+        y: { stacked: true, ticks: { color: '#5a5a60' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    })
+  });
+
+  renderDeviceAccordion(floor, groups);
+}
+
+function renderDeviceAccordion(floor, groups) {
+  const container = document.getElementById('deviceAccordion');
+  container.innerHTML = '';
+  const ids = Object.keys(groups);
+
+  ids.forEach((id, i) => {
+    const group = groups[id];
+    const color = getFloorDeviceColor(floor, i, ids.length); // 🆕 跟堆疊圖裡同一個設備用同一個顏色
+    const dataKw = timeLabels.map(t => (group.powersByTime[t] || 0) / 1000);
+    const kwh = dataKw.reduce((a, b) => a + b, 0) * 0.25;
+
+    const row = document.createElement('div');
+    row.className = 'device-row';
+    row.innerHTML = `
+      <button class="device-row-head">
+        <span class="device-name tc"><span class="device-dot" style="background:${color};"></span>${group.name}</span>
+        <span class="device-kwh">${kwh.toFixed(2)} kWh <span class="device-caret">▸</span></span>
+      </button>
+      <div class="device-detail"><div class="device-detail-inner">
+        <canvas height="70"></canvas>
+      </div></div>
+    `;
+    container.appendChild(row);
+
+    row.querySelector('.device-row-head').addEventListener('click', () => {
+      const wasOpen = row.classList.contains('open');
+      container.querySelectorAll('.device-row.open').forEach(r => r.classList.remove('open'));
+      if (!wasOpen) {
+        row.classList.add('open');
+        const canvasEl = row.querySelector('canvas');
+        if (!canvasEl.dataset.rendered) {
+          new Chart(canvasEl, {
+            type: 'line',
+            data: { labels: timeLabels, datasets: [{
+              data: dataKw, borderColor: color, backgroundColor: color.replace('hsl','hsla').replace(')', ',0.2)'),
+              borderWidth: 2, pointRadius: 0, tension: 0.3, fill: true
+            }]},
+            options: Object.assign({}, chartBase, { plugins: { legend: { display: false } } })
+          });
+          canvasEl.dataset.rendered = '1';
+        }
+      }
+    });
+  });
+}
+
+document.getElementById('floorTabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.floor-tab');
+  if (!btn) return;
+  document.querySelectorAll('.floor-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentFloor = btn.dataset.floor;
+  renderFloorChart(currentFloor);
+});
+
+renderFloorChart(currentFloor);
+
 
     // 2. 獨立畫出 PV 太陽能圖表
     charts.pvChart = new Chart(document.getElementById('pvChart'), {
