@@ -20,7 +20,7 @@ from pathlib import Path
 # │  ├─ pv_curve_15min.csv
 # │  └─ electricity_tariffs_2tage_and_3tage.csv
 # └─ results/
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent 
 DATA_DIR = BASE_DIR / "data" / "01_raw"
 RESULT_DIR = BASE_DIR / "data" / "04_optimized_pso"
 
@@ -36,7 +36,7 @@ TARIFF_CSV_PATH = DATA_DIR / "electricity_tariffs_2tage_and_3tage_UTF-8.csv"
 # LOAD_CSV_UNIT 就是用來控制 你的main.py 讀檔時要不要做這個轉換
 #   "W"  -> 讀進來的數值會被 main.py 除以 1000 轉成 kW 再使用（目前專案的實際情況）
 #   "kW" -> 讀進來的數值直接當作 kW 使用，不做轉換
-LOAD_CSV_UNIT = "W"
+
 
 TARIFF_TYPES = ("two_stage", "three_stage")
 TARIFF_SEASON = "summer"
@@ -49,7 +49,7 @@ OUTPUT_CSV_PATHS = {
 
 #補一個 統一的 CSV 讀寫編碼。用 utf-8-sig 是因為專案裡的中文欄位/註解在 Excel 開啟時不會亂碼。
 CSV_ENCODING = "utf-8-sig"
-
+INPUT_POWER_W_TO_KW = 0.001 
 
 
 
@@ -128,6 +128,7 @@ LOAD_METADATA_COLUMNS = {  # 不納入設備功率加總的資料欄位
 BESS_CAPACITY_KWH = 20.0  # 電池額定容量（kWh）
 INITIAL_SOC = 0.50  # 電池初始荷電狀態
 SOC_MIN = 0.20  # 電池最低荷電狀態
+OUTAGE_SOC_MIN = 0.01 
 SOC_MAX = 0.90  # 電池最高荷電狀態
 TARGET_FINAL_SOC = 0.50  # 每日結束目標荷電狀態
 
@@ -162,3 +163,6 @@ INERTIA_MAX = 0.90  # 慣性權重最大值
 INERTIA_MIN = 0.40  # 慣性權重最小值
 COGNITIVE_COEFFICIENT = 1.50  # 個體最佳學習係數
 SOCIAL_COEFFICIENT = 1.50  # 全域最佳學習係數
+MIN_ITERATIONS = 100
+EARLY_STOP_PATIENCE = 50
+EARLY_STOP_REL_TOLERANCE = 1e-5

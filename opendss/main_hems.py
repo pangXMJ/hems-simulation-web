@@ -32,28 +32,28 @@ def save_history_and_warning(df_history, df_warning, mode_prefix):
     
     try:
         df_history.to_csv(history_path, index=False, encoding='utf-8-sig')
-        print(f"✅ [{mode_prefix}] 歷史總表已成功存檔至：{history_path}")
+        print(f" [{mode_prefix}] 歷史總表已成功存檔至：{history_path}")
 
         if not df_warning.empty:
             df_warning.to_csv(warning_path, index=False, encoding='utf-8-sig')
-            print(f"⚠️ [警告] {mode_prefix} 模式發現系統過載或電壓異常！共有 {len(df_warning)} 筆紀錄。")
-            print(f"✅ 警報報表已存檔至：{warning_path}")
+            print(f" [警告] {mode_prefix} 模式發現系統過載或電壓異常！共有 {len(df_warning)} 筆紀錄。")
+            print(f" 警報報表已存檔至：{warning_path}")
         else:
-            print(f"🎉 [恭喜] {mode_prefix} 模式系統體檢通過！全天無任何設備過載或電壓越限。")     
+            print(f" [恭喜] {mode_prefix} 模式系統體檢通過！全天無任何設備過載或電壓越限。")     
             
     except Exception as e:
-        print(f"❌ {mode_prefix} 模式存檔失敗！電腦給的錯誤原因：{e}")
+        print(f" {mode_prefix} 模式存檔失敗！電腦給的錯誤原因：{e}")
 
 
 def main():
     print("="*60)
-    print("🚀 啟動 HEMS 智慧微電網數位孿生 - 三階段系統")
+    print(" 啟動 HEMS 智慧微電網數位孿生 - 三階段系統")
     print("="*60 + "\n")
 
     # ==========================================
     # 階段一：Baseline 模擬 (傳統淨功率邏輯)
     # ==========================================
-    print("▶️ [階段一] 開始執行 (Baseline) 未經最佳化基準模擬...")
+    print("▶ [階段一] 開始執行 (Baseline) 未經最佳化基準模擬...")
     df_base_history, df_base_warning = run_simulation(mode='baseline')#跑run_simulation的baseline模式得到 df_base_history跟df_base_warning
     save_history_and_warning(df_base_history, df_base_warning, "Baseline")#呼叫save_history_and_warning 把 df_base_history跟df_base_warning丟進去
     
@@ -62,7 +62,7 @@ def main():
     # ==========================================
     # 階段二：PSO 最佳化模擬 (讀取排程，正常併網)
     # ==========================================
-    print("▶️ [階段二] 開始執行 (PSO) 最佳化排程模擬...")
+    print("▶ [階段二] 開始執行 (PSO) 最佳化排程模擬...")
     df_pso_history, df_pso_warning = run_simulation(mode='pso')
     save_history_and_warning(df_pso_history, df_pso_warning, "Pso")
 
@@ -71,27 +71,27 @@ def main():
     # ==========================================
     # 階段三：動態突發停電模擬 (PSO + Island Mode)
     # ==========================================
-    print("▶️ [階段三] 進入 (Island) 突發停電模擬情境設定")
-    print("💡 請設定預計的停電時間 (格式為 HH:MM，例如 13:00。輸入 x 則跳過此階段)")
+    print("▶ [階段三] 進入 (Island) 突發停電模擬情境設定")
+    print(" 請設定預計的停電時間 (格式為 HH:MM，例如 13:00。輸入 x 則跳過此階段)")
     
-    start_time_str = input("👉 請輸入【停電開始】時間: ")
+    start_time_str = input(" 請輸入【停電開始】時間: ")
     if start_time_str.lower() != 'x':
-        end_time_str = input("👉 請輸入【市電恢復】時間: ")
+        end_time_str = input(" 請輸入【市電恢復】時間: ")
         
         start_step = time_to_step(start_time_str)
         end_step = time_to_step(end_time_str)
         
         if start_step != -1 and end_step != -1 and start_step < end_step:
-            print(f"\n⚠️ 已鎖定停電區間：{start_time_str} (第 {start_step} 步) 至 {end_time_str} (第 {end_step} 步)")
+            print(f"\n 已鎖定停電區間：{start_time_str} (第 {start_step} 步) 至 {end_time_str} (第 {end_step} 步)")
             df_island_history, df_island_warning = run_simulation(mode='island', outage_start_step=start_step, outage_end_step=end_step)
             save_history_and_warning(df_island_history, df_island_warning, "Island")
         else:
-            print("\n❌ 輸入的時間格式有誤，或是開始時間大於結束時間，已跳過停電模擬。")
+            print("\n 輸入的時間格式有誤，或是開始時間大於結束時間，已跳過停電模擬。")
     else:
-        print("\n⏭️ 已跳過停電模擬階段。")
+        print("\n⏭ 已跳過停電模擬階段。")
         
     print("\n" + "="*60)
-    print("🏆 三階段兵推系統執行完畢！所有歷史數據與 01~06 設備資料已備妥。")
+    print(" 三階段兵推系統執行完畢！所有歷史數據與 01~06 設備資料已備妥。")
     print("="*60 + "\n")
 
 if __name__ == "__main__":

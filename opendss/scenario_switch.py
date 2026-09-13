@@ -181,7 +181,7 @@ def write_load_csv(device_schedules: list):#在按下按鈕後 第414行接受�
 # ==========================================
 # 階段二：呼叫 PSO
 # ==========================================
-def _patch_config_and_reload_pso(outage_start: str | None, outage_end: str | None):
+def _patch_config_and_reload_pso():
     """
     做法：config.py 的停電時間是模組載入時就算好的常數
     （OUTAGE_START_INDEX / OUTAGE_END_INDEX），pso.py 用
@@ -201,7 +201,7 @@ def _patch_config_and_reload_pso(outage_start: str | None, outage_end: str | Non
     import config
     import pso
 
-    # 🆕 強制覆蓋資料夾路徑，統一指向共用的 data/01_raw、data/04_optimized_pso
+    #  強制覆蓋資料夾路徑，統一指向共用的 data/01_raw、data/04_optimized_pso
     config.DATA_DIR = RAW_DATA_DIR
     config.RESULT_DIR = PSO_OUTPUT_DIR
     config.LOAD_CSV_PATH = RAW_DATA_DIR / "LoadShapes_All_Nodes_15min.csv"
@@ -212,6 +212,9 @@ def _patch_config_and_reload_pso(outage_start: str | None, outage_end: str | Non
         "three_stage": PSO_OUTPUT_DIR / BATTERY_SCHEDULE_FILENAMES["three_stage"],
     }
 
+    return config, pso
+
+"""
     if outage_start and outage_end:
         config.OUTAGE_START_TIME = outage_start
         config.OUTAGE_END_TIME = outage_end
@@ -227,7 +230,8 @@ def _patch_config_and_reload_pso(outage_start: str | None, outage_end: str | Non
     importlib.reload(pso)  # 讓 pso.py 重新從 config 抓最新的停電區間常數
     import pso
     print(f"🔎 [停電區間檢查] OUTAGE_START_INDEX={pso.OUTAGE_START_INDEX}, OUTAGE_END_INDEX={pso.OUTAGE_END_INDEX}")
-    return config, pso
+"""
+
 
 
 def run_pso_for_scenario(pricing: str, outage_start: str | None, outage_end: str | None, bess_max_kw_override: float | None = None):
@@ -237,15 +241,29 @@ def run_pso_for_scenario(pricing: str, outage_start: str | None, outage_end: str
     hems_basecontrol.py / server.py 本來就會讀同一個資料夾。
     """
     import main as pso_main  # 隊友的 main.py
+    import pso
 
-    config, pso = _patch_config_and_reload_pso(outage_start, outage_end)
+   #config, pso = _patch_config_and_reload_pso(outage_start, outage_end)
+    config, pso = _patch_config_and_reload_pso()
 
     if bess_max_kw_override is not None:
         # ⚠️ 過載重試時的暫代降級：直接調低電池最大功率上限，逼 PSO 算出更保守的排程
         config.P_BESS_MAX_KW = bess_max_kw_override
         importlib.reload(pso)
 
-    importlib.reload(pso_main)  # main.py 內部也 import 了 config 的常數，一併重載
+    if outage_start and outage_end:
+        outage_start_index = config.time_to_interval(outage_start)
+        outage_end_index = config.time_to_interval(outage_end)
+    else:
+        outage_start_index = 0
+        outage_end_index = 0 
+
+    terminal_soc_control_start_index = max(
+        config.TERMINAL_SOC_CONTROL_START_INDEX, outage_end_index
+    )
+       
+
+    #importlib.reload(pso_main)  # main.py 內部也 import 了 config 的常數，一併重載
 
     tariff_type = "two_stage" if pricing == "two_stage" else "three_stage"
     input_data = pso_main.read_input_data(ACTIVE_LOAD_CSV, config.PV_CSV_PATH)
@@ -263,15 +281,24 @@ def run_pso_for_scenario(pricing: str, outage_start: str | None, outage_end: str
         tariff_input["noncritical_load_kw"].to_numpy(),
         tariff_input["pv_kw"].to_numpy(),
         tariff_input["price_per_kwh"].to_numpy(),
+        outage_start_index=outage_start_index,
+        outage_end_index=outage_end_index,
+        terminal_soc_control_start_index=terminal_soc_control_start_index,
     )
+
     print(f"🎯 [PSO自評] PSO演算法自己算出來的理論總成本(電費+懲罰項): {pso_result['after_fitness']}")  # 🆕 除錯用，驗證完可刪
-    battery_result = pso_main.simulate_best_schedule(tariff_input, pso_result["after_position"])
+
+    battery_result = pso_main.simulate_best_schedule(
+        tariff_input,
+        pso_result["after_position"],
+        outage_start_index=outage_start_index,
+        outage_end_index=outage_end_index,
+        terminal_soc_control_start_index=terminal_soc_control_start_index,
+    )
 
     output_path = config.OUTPUT_CSV_PATHS[tariff_type]
     output_path.parent.mkdir(parents=True, exist_ok=True)
     battery_result.to_csv(output_path, index=False, float_format="%.6f")
-    # 🆕 不用再複製了：output_path 本來就在共用的 data/04_optimized_pso，
-    #    hems_basecontrol.py / server.py 會直接從這裡讀。
 
     return battery_result, output_path
 
@@ -308,7 +335,7 @@ def run_offline_validation(mode: str, pricing: str,
 
     has_overload = not df_warning.empty
 
-    # 🆕 存檔，檔名前綴跟 main_hems.py 的慣例一致（mode.capitalize()）
+    # 存檔，檔名前綴跟 main_hems.py 的慣例一致（mode.capitalize()）
     prefix = mode.capitalize()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     df_history.to_csv(OUTPUT_DIR / f"{prefix}_History.csv", index=False, encoding="utf-8-sig")
@@ -319,7 +346,7 @@ def run_offline_validation(mode: str, pricing: str,
 
 
 # ==========================================
-# 🆕 電費計算：拿離線驗證跑出來的累積 kWh，套用 PSO 已經有的電價表
+#  電費計算：拿離線驗證跑出來的累積 kWh，套用 PSO 已經有的電價表
 # ==========================================
 METER_COLUMN = "總電錶T_當前累積功率(kWh)"  # ⚠️ 請對照你實際 df_history 的欄位名稱，若不同要改這裡
 

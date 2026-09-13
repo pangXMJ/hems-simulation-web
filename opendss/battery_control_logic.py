@@ -81,7 +81,7 @@ def decide_battery_action(
                 #資料：這行在算「PV 接下來只准發多少電」。邏輯是能量守恆——系統裡的電，發出來多少就要有地方去多少：
                 result["pv_pmpp"] = round(curtailed_pv_kw, 2)#把算好的值四捨五入到小數點後2位，寫進 result 這個字典的 "pv_pmpp" 欄位。 語法：round(number, ndigits)參數：number：要處理的數字。ndigits：要取到的小數位數（省略時預設為 0，會傳回整數）。
                 result["logs"].append(
-                    f"🚨 [{time_str}] PV過剩！充 {round(actual_charge_kw,1)}kW，"
+                    f" [{time_str}] PV過剩！充 {round(actual_charge_kw,1)}kW，"
                     f"假負載燒 {round(actual_dump_kw,1)}kW，需要降載 PV"
                 )
                 #語法：result["logs"] 是一個 list（陣列），.append(...) 是 list 的方法，把新元素加到最後面。
@@ -106,7 +106,7 @@ def decide_battery_action(
 
             if soc <= ISLAND_SOC_FLOOR: #檢查電池是否已經見底
                 result["battery_state"] = "IDLING"
-                result["logs"].append(f"💀 [{time_str}] 電池耗盡！無法支撐負載，微電網崩潰。")
+                result["logs"].append(f" [{time_str}] 電池耗盡！無法支撐負載，微電網崩潰。")
             else:
                 actual_deficit = abs(net_kw)#電池還有電決定要放多少電
                 
@@ -126,7 +126,7 @@ def decide_battery_action(
 
                 if discharge_need > battery_kwrated:
                     result["logs"].append(
-                        f"⚠️ [{time_str}] 過載！缺口 ({round(discharge_need,1)}kW) 超過極限 ({battery_kwrated}kW)"
+                        f" [{time_str}] 過載！缺口 ({round(discharge_need,1)}kW) 超過極限 ({battery_kwrated}kW)"
                     ) #如果「需要的放電量」大於「電池能給的上限」，代表這一步電池扛不住，會有電力缺口沒被補上（負載端電壓/頻率可能會不穩）。這裡只是記錄警告 log，程式不會中斷或報錯
                 result["battery_state"] = "DISCHARGING"#正式把這一步的決策寫進 result：電池狀態設為「放電中」，並且算出對應的 %Discharge 指令值，供呼叫端（server.py/hems_basecontrol.py）拿去組 OpenDSS 指令字串執行。
                 result["battery_command_pct"] = round((actual_discharge_kw / battery_kwrated) * 100.0, 2)  # 🆕 同樣改用百分比
@@ -190,7 +190,7 @@ def decide_battery_action(
                 #useful_discharge_kw：家裡實際能用掉多少（不做超過負載需求的無效放電）
                 if current_pso_kw > battery_kwrated:
                     result["logs"].append(
-                f"⚠️ [{time_str}] PSO排程過載！要求 {round(current_pso_kw,1)}kW 超過額定 {battery_kwrated}kW"
+                f" [{time_str}] PSO排程過載！要求 {round(current_pso_kw,1)}kW 超過額定 {battery_kwrated}kW"
             )
                 result["battery_state"] = "DISCHARGING"
                 result["battery_command_pct"] = round((actual_discharge_kw / battery_kwrated) * 100.0, 2)
@@ -202,7 +202,7 @@ def decide_battery_action(
                 actual_charge_kw = min(abs(current_pso_kw), battery_kwrated)
                 if abs(current_pso_kw) > battery_kwrated:
                     result["logs"].append(
-                        f"⚠️ [{time_str}] PSO排程過載！要求 {round(abs(current_pso_kw),1)}kW 超過額定 {battery_kwrated}kW"
+                        f" [{time_str}] PSO排程過載！要求 {round(abs(current_pso_kw),1)}kW 超過額定 {battery_kwrated}kW"
                     )
                 result["battery_state"] = "CHARGING"
                 result["battery_command_pct"] = round((actual_charge_kw / battery_kwrated) * 100.0, 2)

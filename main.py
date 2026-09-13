@@ -10,13 +10,11 @@ from config import (
     CRITICAL_LOAD_COLUMNS,
     CSV_ENCODING,
     INITIAL_SOC,
-    INPUT_POWER_W_TO_KW,
     LOAD_CSV_PATH,
+    LOAD_CSV_UNIT, #就是用來控制 你的main.py 讀檔時要不要做這個功率轉換
     LOAD_METADATA_COLUMNS,
     NUM_INTERVALS,
-    OUTAGE_END_INDEX,
     OUTAGE_END_TIME,
-    OUTAGE_START_INDEX,
     OUTAGE_START_TIME,
     OUTPUT_CSV_PATHS,
     PV_CSV_PATH,
@@ -25,8 +23,6 @@ from config import (
     TARIFF_SEASON,
     TARIFF_TYPES,
     TARGET_FINAL_SOC,
-    TERMINAL_SOC_CONTROL_START_INDEX,
-    time_to_interval,
 )
 from pso import (
     battery_energy_change_kwh,
@@ -44,12 +40,12 @@ EXPECTED_TIMES = [  # 一天應有的 96 個標準時間字串
 ]
 
 
-def _read_csv(path, data_name, usecols=None):
+def _read_csv(path, data_name):
     """以固定的 UTF-8-SIG 編碼讀取 CSV。"""
     path = Path(path)  # CSV 檔案路徑
     if not path.exists():
         raise FileNotFoundError(f"找不到{data_name}：{path}")
-    return pd.read_csv(path, encoding=CSV_ENCODING, usecols=usecols)
+    return pd.read_csv(path, encoding=CSV_ENCODING)
 
 
 def _read_tariff_csv(path):
@@ -112,7 +108,7 @@ def _to_numeric_columns(df, columns, data_name):
 
 
 def read_load_data(load_csv_path):
-    """讀取 W 單位設備負載，轉成 kW 後加總各類負載。"""
+    """讀取設備負載，依實際欄位加總總負載、關鍵負載與非關鍵負載。"""
     load_df = _validate_and_sort_time(  # 檢查完成的負載資料表
         _read_csv(load_csv_path, "負載 CSV"),
         "負載 CSV",
@@ -139,7 +135,16 @@ def read_load_data(load_csv_path):
     )
     if (load_df[appliance_columns] < 0).any().any():
         raise ValueError("負載功率不可為負數")
-    load_df[appliance_columns] *= INPUT_POWER_W_TO_KW  # W 轉成 kW
+
+     # ⚠️ 單位轉換：專案唯一真實來源的 LoadShapes_All_Nodes_15min.csv 單位是 W，
+    # 但這支程式後續全部用 kW 計算（跟電價、電池 kW 對齊），所以這裡依
+    # config.LOAD_CSV_UNIT 決定要不要除以 1000。
+    # 這個轉換只在這裡做一次，之後 load_kw / critical_load_kw / noncritical_load_kw
+    # 都已經是 kW，不用再處理。
+    if LOAD_CSV_UNIT == "W":
+        load_df[appliance_columns] = load_df[appliance_columns] / 1000.0
+    elif LOAD_CSV_UNIT != "kW":
+        raise ValueError(f"config.LOAD_CSV_UNIT 只能是 'W' 或 'kW'，目前是：{LOAD_CSV_UNIT}")
 
     result = pd.DataFrame({"Time": load_df["Time"]})  # 整理後的負載資料表
     result["load_kw"] = load_df[appliance_columns].sum(axis=1)  # 總負載功率
@@ -153,13 +158,9 @@ def read_load_data(load_csv_path):
 
 
 def read_pv_data(pv_csv_path):
-    """讀取原始 W 單位的 pv_kw 欄位，轉成 PSO 使用的 kW。"""
+    """讀取本次提供的 Time、pv_kw 太陽能資料。"""
     pv_df = _validate_and_sort_time(  # 檢查完成的太陽能資料表
-        _read_csv(
-            pv_csv_path,
-            "PV CSV",
-            usecols=lambda column: column in {"Time", "pv_kw"},
-        ),
+        _read_csv(pv_csv_path, "PV CSV"),
         "PV CSV",
     )
     if "pv_kw" not in pv_df.columns:
@@ -172,7 +173,10 @@ def read_pv_data(pv_csv_path):
     )
     if (pv_df["pv_kw"] < 0).any():
         raise ValueError("pv_kw 不可為負數")
-    pv_df["pv_kw"] *= INPUT_POWER_W_TO_KW  # CSV 原始值為 W，讀取後轉成 kW
+    #有新加的
+    if LOAD_CSV_UNIT == "W":
+        pv_df["pv_kw"] = pv_df["pv_kw"] / 1000.0
+
     return pv_df[["Time", "pv_kw"]]
 
 
@@ -248,26 +252,13 @@ def read_input_data(load_csv_path, pv_csv_path):
     return data
 
 
-def simulate_best_schedule(
-    input_data,
-    requested_schedule_kw,
-    outage_start_index=OUTAGE_START_INDEX,
-    outage_end_index=OUTAGE_END_INDEX,
-    terminal_soc_control_start_index=TERMINAL_SOC_CONTROL_START_INDEX,
-):
-    """依最佳排程逐點套用硬限制，產生最終 CSV 所需資料。
-
-    outage_start_index / outage_end_index / terminal_soc_control_start_index
-    預設沿用 config.py 的固定值，呼叫端可傳入不同的停電區間，讓模擬跟
-    run_pso() 用的假設保持一致（兩邊務必傳入相同的值）。
-    """
+def simulate_best_schedule(input_data, requested_schedule_kw):
+    """依最佳排程逐點套用硬限制，產生最終 CSV 所需資料。"""
     current_energy_kwh = INITIAL_SOC * BESS_CAPACITY_KWH  # 目前電池能量（kWh）
     records = []  # 每個時段的電池模擬紀錄
 
     for t, row in input_data.iterrows():
-        outage = is_outage_interval(  # 目前是否停電
-            t, outage_start_index, outage_end_index
-        )
+        outage = is_outage_interval(t)  # 目前是否停電
         requested_bess_kw = float(requested_schedule_kw[t])  # PSO 要求的電池功率
         load_demand_kw = (
             row["critical_load_kw"] if outage else row["load_kw"]
@@ -276,7 +267,6 @@ def simulate_best_schedule(
         terminal_request_kw = terminal_soc_request_kw(  # 終端 SOC 控制要求功率
             current_energy_kwh,
             t,
-            terminal_soc_control_start_index,
         )
         if terminal_request_kw is not None:
             requested_bess_kw = terminal_request_kw  # 改用終端 SOC 控制功率
@@ -291,7 +281,6 @@ def simulate_best_schedule(
         actual_bess_kw = limit_bess_power_by_soc(  # SOC 限制後的實際電池功率
             current_energy_kwh,
             constrained_request_kw,
-            outage,
         )
         energy_change_kwh = battery_energy_change_kwh(  # 此時段電池能量變化
             actual_bess_kw
@@ -325,29 +314,8 @@ def simulate_best_schedule(
     return result
 
 
-def run(
-    load_csv_path,
-    pv_csv_path,
-    tariff_csv_path,
-    output_dir,
-    outage_start_time=OUTAGE_START_TIME,
-    outage_end_time=OUTAGE_END_TIME,
-):
-    """兩種方案各跑一次 PSO，回傳並寫出兩份電池排程。
-
-    outage_start_time / outage_end_time：本次要模擬的停電時間，格式跟
-    config.py 一樣是 "HH:MM"，預設沿用 config.py 的 18:00～22:00。
-    如果外部（例如網站的停電控制頁面）指定了不同的停電時間，這裡會自動
-    把「終端 SOC 控制開始時段」順延到停電結束之後，避免電池沒有足夠時間
-    從緊急下限回到目標 SOC。
-    """
-    outage_start_index = time_to_interval(outage_start_time)
-    outage_end_index = time_to_interval(outage_end_time)
-    # 終端 SOC 控制不能比停電結束時間還早開始，否則電池可能來不及回到目標 SOC。
-    terminal_soc_control_start_index = max(
-        TERMINAL_SOC_CONTROL_START_INDEX, outage_end_index
-    )
-
+def run(load_csv_path, pv_csv_path, tariff_csv_path, output_dir):
+    """兩種方案各跑一次 PSO，回傳並寫出兩份電池排程。"""
     input_data = read_input_data(load_csv_path, pv_csv_path)  # 負載與 PV 輸入資料
     tariff_df = _read_tariff_csv(tariff_csv_path)  # 電價規則資料表
     output_dir = Path(output_dir)  # 結果輸出目錄
@@ -367,16 +335,10 @@ def run(
             tariff_input["noncritical_load_kw"].to_numpy(),
             tariff_input["pv_kw"].to_numpy(),
             tariff_input["price_per_kwh"].to_numpy(),
-            outage_start_index=outage_start_index,
-            outage_end_index=outage_end_index,
-            terminal_soc_control_start_index=terminal_soc_control_start_index,
         )
         battery_result = simulate_best_schedule(  # 最佳排程的逐時段模擬結果
             tariff_input,
             pso_result["after_position"],
-            outage_start_index=outage_start_index,
-            outage_end_index=outage_end_index,
-            terminal_soc_control_start_index=terminal_soc_control_start_index,
         )
 
         output_path = (  # 目前電價方案的結果檔案路徑
@@ -388,40 +350,19 @@ def run(
             encoding=CSV_ENCODING,
             float_format="%.6f",
         )
-        iteration_history = pd.DataFrame(
-            pso_result["iteration_history"]
-        )  # PSO 初始狀態與每次迭代指標
-        iteration_output_path = (
-            output_dir
-            / (
-                f"pso_iteration_history_{tariff_type}_"
-                f"{TARIFF_SEASON}_{TARIFF_DAY_TYPE}_15min.csv"
-            )
-        )
-        iteration_history.to_csv(
-            iteration_output_path,
-            index=False,
-            encoding=CSV_ENCODING,
-            float_format="%.10f",
-        )
         all_results[tariff_type] = {  # 保存目前電價方案的結果
             "battery_result": battery_result,
-            "iteration_history": iteration_history,
             "pso_result": pso_result,
             "output_path": output_path,
-            "iteration_output_path": iteration_output_path,
         }
 
         print(
             f"{tariff_type}: fitness={pso_result['after_fitness']:.6f}, "
-            f"iterations={pso_result['actual_iterations']}, "
-            f"stopped_early={pso_result['stopped_early']}, "
             f"final_soc={battery_result['soc_percent'].iloc[-1]:.6f}%, "
-            f"output={output_path}, "
-            f"iteration_output={iteration_output_path}"
+            f"output={output_path}"
         )
 
-    print(f"停電時段：{outage_start_time}～{outage_end_time}（結束時間不包含）")
+    print(f"停電時段：{OUTAGE_START_TIME}～{OUTAGE_END_TIME}（結束時間不包含）")
     return all_results
 
 
@@ -433,28 +374,9 @@ def parse_args():
     parser.add_argument("--pv", type=Path, default=PV_CSV_PATH)
     parser.add_argument("--tariff", type=Path, default=TARIFF_CSV_PATH)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_CSV_PATHS["two_stage"].parent)
-    parser.add_argument(
-        "--outage-start",
-        type=str,
-        default=OUTAGE_START_TIME,
-        help="停電開始時間，格式 HH:MM，預設沿用 config.py 的設定",
-    )
-    parser.add_argument(
-        "--outage-end",
-        type=str,
-        default=OUTAGE_END_TIME,
-        help="停電結束時間（不包含），格式 HH:MM，預設沿用 config.py 的設定",
-    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()  # 使用者輸入的命令列參數
-    run(
-        args.load,
-        args.pv,
-        args.tariff,
-        args.output_dir,
-        outage_start_time=args.outage_start,
-        outage_end_time=args.outage_end,
-    )
+    run(args.load, args.pv, args.tariff, args.output_dir)

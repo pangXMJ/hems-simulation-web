@@ -9,8 +9,6 @@ from config import (
     CRITICAL_SHORTAGE_PENALTY_WEIGHT,
     CURTAILMENT_PENALTY_WEIGHT,
     DT,
-    EARLY_STOP_PATIENCE,
-    EARLY_STOP_REL_TOLERANCE,
     ETA_CHARGE,
     ETA_DISCHARGE,
     FINAL_SOC_PENALTY_WEIGHT,
@@ -18,11 +16,9 @@ from config import (
     INERTIA_MIN,
     INITIAL_SOC,
     MAX_ITERATIONS,
-    MIN_ITERATIONS,
     NUM_INTERVALS,
     NUM_PARTICLES,
     OUTAGE_END_INDEX,
-    OUTAGE_SOC_MIN,
     OUTAGE_START_INDEX,
     P_BESS_MAX_KW,
     RANDOM_SEED,
@@ -34,18 +30,9 @@ from config import (
 )
 
 
-def is_outage_interval(
-    interval_index,
-    outage_start_index=OUTAGE_START_INDEX,
-    outage_end_index=OUTAGE_END_INDEX,
-):
-    """判斷目前是否為停電時段；結束時間不包含在內。
-
-    outage_start_index / outage_end_index 預設用 config.py 的固定值，
-    但呼叫端（例如 scenario_switch.py）可以直接傳入不同的停電區間，
-    不用再依賴「monkeypatch config 屬性 + importlib.reload」這種暫代做法。
-    """
-    return outage_start_index <= interval_index < outage_end_index
+def is_outage_interval(interval_index):
+    """判斷目前是否為停電時段；結束時間不包含在內。"""
+    return OUTAGE_START_INDEX <= interval_index < OUTAGE_END_INDEX
 
 
 def battery_energy_change_kwh(actual_bess_kw):
@@ -57,13 +44,12 @@ def battery_energy_change_kwh(actual_bess_kw):
     return 0.0
 
 
-def limit_bess_power_by_soc(current_energy_kwh, requested_bess_kw, outage=False):
-    """依供電狀態套用 SOC 下限，並限制在電池額定功率與 SOC 上限內。"""
+def limit_bess_power_by_soc(current_energy_kwh, requested_bess_kw):
+    """將要求功率限制在額定功率及 SOC 20%～90% 的硬限制內。"""
     requested_bess_kw = float(  # 額定功率限制後的要求功率
         np.clip(requested_bess_kw, -P_BESS_MAX_KW, P_BESS_MAX_KW)
     )
-    minimum_soc = OUTAGE_SOC_MIN if outage else SOC_MIN  # 目前供電狀態的 SOC 下限
-    min_energy_kwh = minimum_soc * BESS_CAPACITY_KWH  # SOC 下限對應的最低能量
+    min_energy_kwh = SOC_MIN * BESS_CAPACITY_KWH  # SOC 下限對應的最低能量
     max_energy_kwh = SOC_MAX * BESS_CAPACITY_KWH  # SOC 上限對應的最高能量
 
     if requested_bess_kw > 0:  # 放電
@@ -127,18 +113,9 @@ def limit_bess_power_by_power_balance(
     return requested_bess_kw
 
 
-def terminal_soc_request_kw(
-    current_energy_kwh,
-    interval_index,
-    terminal_soc_control_start_index=TERMINAL_SOC_CONTROL_START_INDEX,
-):
-    """停電結束後平均修正能量，使最後一筆 SOC 精確回到目標值。
-
-    terminal_soc_control_start_index 預設用 config.py 的固定值（22:00），
-    但如果停電時間是動態指定的，呼叫端應該傳入「不早於停電結束時段」的值，
-    否則電池可能沒有足夠時間從緊急下限（例如 5%）回到目標 SOC。
-    """
-    if interval_index < terminal_soc_control_start_index:
+def terminal_soc_request_kw(current_energy_kwh, interval_index):
+    """22:00 後平均修正能量，使最後一筆 SOC 精確回到 50%。"""
+    if interval_index < TERMINAL_SOC_CONTROL_START_INDEX:
         return None
 
     remaining_intervals = NUM_INTERVALS - interval_index  # 剩餘時段數
@@ -172,15 +149,8 @@ def hems_objective(
     noncritical_load_kw,
     pv_kw,
     price_per_kwh,
-    outage_start_index=OUTAGE_START_INDEX,
-    outage_end_index=OUTAGE_END_INDEX,
-    terminal_soc_control_start_index=TERMINAL_SOC_CONTROL_START_INDEX,
 ):
-    """計算一組 96 點電池排程的電費與限制懲罰，數值越小越好。
-
-    outage_start_index / outage_end_index / terminal_soc_control_start_index
-    預設沿用 config.py 的固定值，但可依需求傳入不同的停電區間。
-    """
+    """計算一組 96 點電池排程的電費與限制懲罰，數值越小越好。"""
     _validate_series(
         bess_schedule_kw,
         critical_load_kw,
@@ -195,14 +165,11 @@ def hems_objective(
 
     for t in range(NUM_INTERVALS):
         requested_bess_kw = bess_schedule_kw[t]  # 排程要求的電池功率
-        outage = is_outage_interval(  # 目前是否停電
-            t, outage_start_index, outage_end_index
-        )
+        outage = is_outage_interval(t)  # 目前是否停電
 
         terminal_request_kw = terminal_soc_request_kw(  # 終端 SOC 控制要求功率
             current_energy_kwh,
             t,
-            terminal_soc_control_start_index,
         )
         if terminal_request_kw is not None:
             requested_bess_kw = terminal_request_kw  # 改用終端 SOC 控制功率
@@ -222,7 +189,6 @@ def hems_objective(
         actual_bess_kw = limit_bess_power_by_soc(  # SOC 限制後的實際電池功率
             current_energy_kwh,
             requested_bess_kw,
-            outage,
         )
         current_energy_kwh += battery_energy_change_kwh(  # 更新目前電池能量
             actual_bess_kw
@@ -265,44 +231,14 @@ def hems_objective(
     return total_cost + penalty
 
 
-def run_pso(
-    critical_load_kw,
-    noncritical_load_kw,
-    pv_kw,
-    price_per_kwh,
-    outage_start_index=OUTAGE_START_INDEX,
-    outage_end_index=OUTAGE_END_INDEX,
-    terminal_soc_control_start_index=TERMINAL_SOC_CONTROL_START_INDEX,
-):
-    """執行 96 維 PSO，回傳最佳排程、fitness 與逐代指標。
-
-    outage_start_index / outage_end_index：本次要最佳化的停電區間（半開區間，
-    結束時段不包含）。預設沿用 config.py 的固定 18:00～22:00，呼叫端（例如
-    scenario_switch.py）可以直接傳入不同的值，取代舊有的
-    「monkeypatch config 屬性 + importlib.reload(pso)」暫代做法。
-
-    terminal_soc_control_start_index：終端 SOC 控制開始時段，必須不早於
-    outage_end_index，否則電池可能沒有足夠時間從緊急下限回到目標 SOC。
-    """
+def run_pso(critical_load_kw, noncritical_load_kw, pv_kw, price_per_kwh):
+    """執行 96 維 PSO，回傳最佳排程、fitness 與收斂曲線。"""
     _validate_series(
         critical_load_kw,
         noncritical_load_kw,
         pv_kw,
         price_per_kwh,
     )
-
-    if outage_start_index > outage_end_index:
-        raise ValueError(
-            f"停電開始時段（index={outage_start_index}）不可晚於"
-            f"停電結束時段（index={outage_end_index}）"
-        )
-    if outage_end_index > terminal_soc_control_start_index:
-        raise ValueError(
-            f"停電結束時段（index={outage_end_index}）晚於終端 SOC 控制"
-            f"開始時段（index={terminal_soc_control_start_index}），電池會沒有"
-            f"足夠時間回到目標 SOC。請一併傳入較晚的 "
-            f"terminal_soc_control_start_index。"
-        )
 
     rng = np.random.default_rng(RANDOM_SEED)  # 固定種子的亂數產生器
     lower_bound = -P_BESS_MAX_KW  # 粒子位置下限（最大充電功率）
@@ -326,9 +262,6 @@ def run_pso(
             noncritical_load_kw,
             pv_kw,
             price_per_kwh,
-            outage_start_index,
-            outage_end_index,
-            terminal_soc_control_start_index,
         )
 
     pbest_positions = positions.copy()  # 各粒子的歷史最佳位置
@@ -342,34 +275,13 @@ def run_pso(
 
     before_position = gbest_position.copy()  # PSO 迭代前的最佳位置
     before_fitness = gbest_fitness  # PSO 迭代前的最佳適應值
-
-    def calculate_swarm_diversity():
-        """計算所有粒子與粒子群中心的平均歐氏距離。"""
-        centroid = positions.mean(axis=0)
-        distances = np.linalg.norm(positions - centroid, axis=1)
-        return float(distances.mean())
-
-    iteration_history = [  # iteration=0 代表尚未開始更新粒子的初始狀態
-        {
-            "iteration": 0,
-            "inertia": float(INERTIA_MAX),
-            "gbest_fitness": gbest_fitness,
-            "iteration_best_fitness": float(pbest_fitness.min()),
-            "mean_fitness": float(pbest_fitness.mean()),
-            "std_fitness": float(pbest_fitness.std()),
-            "swarm_diversity": calculate_swarm_diversity(),
-        }
-    ]
-    stopped_early = False
-    stop_reason = f"已達最大迭代次數 {MAX_ITERATIONS}"
-    last_relative_improvement = None
+    convergence_curve = []  # 每次迭代的最佳適應值紀錄
 
     for iteration in range(MAX_ITERATIONS):
         progress = iteration / max(MAX_ITERATIONS - 1, 1)  # 目前迭代進度
         inertia = (  # 線性遞減的慣性權重
             INERTIA_MAX + (INERTIA_MIN - INERTIA_MAX) * progress
         )
-        current_fitness_values = np.empty(NUM_PARTICLES)
 
         for particle in range(NUM_PARTICLES):
             r1 = rng.random(NUM_INTERVALS)  # 個體學習隨機係數
@@ -390,7 +302,6 @@ def run_pso(
             )
 
             current_fitness = fitness(positions[particle])  # 目前粒子的適應值
-            current_fitness_values[particle] = current_fitness
             if current_fitness < pbest_fitness[particle]:
                 pbest_fitness[particle] = current_fitness  # 更新個體最佳適應值
                 pbest_positions[particle] = (  # 更新個體最佳位置
@@ -401,50 +312,12 @@ def run_pso(
                     gbest_fitness = float(current_fitness)  # 更新全域最佳適應值
                     gbest_position = positions[particle].copy()  # 更新全域最佳位置
 
-        iteration_history.append(
-            {
-                "iteration": iteration + 1,
-                "inertia": float(inertia),
-                "gbest_fitness": gbest_fitness,
-                "iteration_best_fitness": float(current_fitness_values.min()),
-                "mean_fitness": float(current_fitness_values.mean()),
-                "std_fitness": float(current_fitness_values.std()),
-                "swarm_diversity": calculate_swarm_diversity(),
-            }
-        )
-
-        actual_iteration = iteration + 1
-        if (
-            actual_iteration >= MIN_ITERATIONS
-            and actual_iteration >= EARLY_STOP_PATIENCE
-        ):
-            previous_gbest = iteration_history[
-                -EARLY_STOP_PATIENCE - 1
-            ]["gbest_fitness"]
-            last_relative_improvement = (
-                previous_gbest - gbest_fitness
-            ) / max(abs(previous_gbest), 1e-12)
-
-            if last_relative_improvement < EARLY_STOP_REL_TOLERANCE:
-                stopped_early = True
-                stop_reason = (
-                    f"最近 {EARLY_STOP_PATIENCE} 代的 gbest_fitness "
-                    f"相對改善率 {last_relative_improvement:.8e} "
-                    f"小於門檻 {EARLY_STOP_REL_TOLERANCE:.8e}"
-                )
-                break
+        convergence_curve.append(gbest_fitness)
 
     return {
         "before_position": before_position,
         "before_fitness": before_fitness,
         "after_position": gbest_position,
         "after_fitness": gbest_fitness,
-        "convergence_curve": np.asarray(
-            [record["gbest_fitness"] for record in iteration_history]
-        ),
-        "iteration_history": iteration_history,
-        "actual_iterations": len(iteration_history) - 1,
-        "stopped_early": stopped_early,
-        "stop_reason": stop_reason,
-        "last_relative_improvement": last_relative_improvement,
+        "convergence_curve": np.asarray(convergence_curve),
     }
