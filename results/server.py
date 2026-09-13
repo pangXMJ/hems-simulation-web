@@ -7,16 +7,64 @@ from fastapi.staticfiles import StaticFiles
 import opendssdirect as dss
 import pandas as pd
 
+
+"""
+運行流程
+從07頁面開始
+在07頁面設定每個設備 電價 停電的屬性 在你按下按鈕之前 早就已經被瀏覽器記錄在對應的 HTML 元素本身裡了
+
+當使用者按下確認按鈕
+   → addEventListener 觸發07頁面的780行的 confirmSwitch()
+   
+   confirmSwitch() 執行
+   → 讀取上面那些早已存在的狀態，收集組成一個臨時的 config 物件
+   config 範例：
+    {
+        "pricing": "two_stage",
+        "outage": {"start_time": "13:00", "end_time": "15:00"},   # 沒勾選就傳 null
+        "device_schedules": [
+            {"column": "l1_airc_abn", "start_time": "14:00", "end_time": "16:00", "on_power_kw": 1.2}
+        ]
+    }
+
+    執行在confirmSwitch()裡面7頁面的519行的 checkOutageDeviceWarnings 
+    → 檢查衝突（checkOutageDeviceWarnings）
+    顯示等待畫面
+  
+    在confirmSwitch()  執行07頁面的700行的http請求到switch_scenario 代表請求要送往你目前網站下的 api/switch_scenario 這個網址
+    fetch('/api/switch_scenario', ...) 把 config 轉成 JSON 文字送出去，送到server.py 143行的 @app.post("/api/switch_scenario")
+
+    server再交給 scenario_switch.py 的 switch_scenario()
+
+
+    switch_scenario() 執行你之前問過的完整八個步驟
+   （write_load_csv → PSO重試迴圈 → baseline驗證 → 算電費 → reset_online_engine → 回傳結果）
+
+
+    這是同步處理：前端打這支 API 會等到整個「寫CSV → PSO → 離線驗證(PSO版+baseline對比)
+    → 重置即時引擎」流程跑完才收到回應，期間前端應顯示等待畫面。
+"""
+
+
+
+
+
+
+
+
+
+
+
 # ==========================================
-# 🔍 系統路徑與資料夾設定
-# 🆕 只有這一行 PROJECT_ROOT 需要依每個人電腦上的實際路徑調整，
-#    其餘路徑都從這裡推導出來，不用每個地方各自改一次。
-#    資料夾結構對齊實際規劃：PROJECT_ROOT/data/01_raw、/04_optimized_pso、/sample
+#  系統路徑與資料夾設定
+#  只有這一行 PROJECT_ROOT 需要依每個人電腦上的實際路徑調整，
+#  其餘路徑都從這裡推導出來，不用每個地方各自改一次。
+#  資料夾結構對齊實際規劃：PROJECT_ROOT/data/01_raw、/04_optimized_pso、/sample
 #
-# 🆕 這段要放在 battery_control_logic / scenario_switch 這兩個 import 之前！
-#    因為 server.py 現在放在 results 資料夾（跟 opendss 資料夾是分開的），
-#    battery_control_logic.py、scenario_switch.py、hems_circuit.py 都放在 opendss，
-#    要先把 opendss 資料夾加進 sys.path，Python 才找得到這些模組。
+#  這段要放在 battery_control_logic / scenario_switch 這兩個 import 之前！
+#  因為 server.py 現在放在 results 資料夾（跟 opendss 資料夾是分開的），
+#  battery_control_logic.py、scenario_switch.py、hems_circuit.py 都放在 opendss，
+#  要先把 opendss 資料夾加進 sys.path，Python 才找得到這些模組。
 # ==========================================
 PROJECT_ROOT = r"C:\projects\hems-simulation-web"
 
@@ -32,8 +80,8 @@ SAMPLE_DIR = os.path.join(PROJECT_ROOT, "data", "sample")
 if OPENDSS_DIR not in sys.path:
     sys.path.append(OPENDSS_DIR)
 
-from battery_control_logic import decide_battery_action  # 🆕 共用電池決策模組（在 opendss 資料夾）
-import scenario_switch  # 🆕 第4階段：設備控制/停電控制頁面確認後觸發的切換流程（在 opendss 資料夾）
+from battery_control_logic import decide_battery_action  #  共用電池決策模組（在 opendss 資料夾）
+import scenario_switch  #  第4階段：設備控制/停電控制頁面確認後觸發的切換流程（在 opendss 資料夾）
 from hems_circuit import build_circuit
 
 # ==========================================
@@ -57,7 +105,7 @@ DUMP_LOAD_MAX_KW = 2.0
 df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))
 pv_w_list = df_pv_brain['pv_kw'].tolist()
 
-# 🆕 開機當下就先用 template x pattern 把 ACTIVE_LOAD_CSV seed 成正確版本，
+#    開機當下就先用 template x pattern 把 ACTIVE_LOAD_CSV seed 成正確版本，
 #    不用等使用者第一次操作設備控制頁面觸發 switch_scenario() 才被覆蓋過去，
 #    避免「剛開機、還沒人操作」這段時間讀到舊的/沒套用曲線的負載資料。
 scenario_switch.write_load_csv(device_schedules=[])
@@ -89,10 +137,12 @@ def startup_event():
 
 
 # ==========================================
-# 🆕 第4階段：設備控制與停電控制頁面按下確認後觸發（做法 A，同步處理）
+# 第4階段：設備控制與停電控制頁面按下確認後觸發（同步處理）
 # ==========================================
-@app.post("/api/switch_scenario")
-def switch_scenario(config: dict):
+
+#處理來自07頁面的確認計算請求
+@app.post("/api/switch_scenario")#當我按下07的確認按鈕 07頁面的693行會傳送請求過來，並把直接把整包 config (2段式電價等等的設定)轉手交給 scenario_switch.py 的 switch_scenario()
+def switch_scenario(config: dict):#config 的資料型態是字典
     """
     config 範例：
     {
@@ -105,7 +155,7 @@ def switch_scenario(config: dict):
     這是同步處理：前端打這支 API 會等到整個「寫CSV → PSO → 離線驗證(PSO版+baseline對比)
     → 重置即時引擎」流程跑完才收到回應，期間前端應顯示等待畫面。
     """
-    current_module = sys.modules[__name__]  # 把 server.py 自己當模組傳進去，讓 scenario_switch 改它的全域變數
+    current_module = sys.modules[__name__]  # 把 server.py 自己當模組傳進去，讓 scenario_switch 改它的全域變數，因為 server.py 是一個伺服器
     result = scenario_switch.switch_scenario(config, current_module)
     return result
 
@@ -156,8 +206,8 @@ def get_daily_summary(pricing: str = "two_stage"):
 def get_current_scenario():
     return {**CURRENT_SCENARIO, **CURRENT_COST_SUMMARY}
 
-
-outage_start_step = -1
+#者兩個變數是用來表示「目前沒有設定停電」這件事情  選擇-1是因為要記錄現在是否是停電，因為我在212行用檢查 變數的
+outage_start_step = -1 #只要outage_start_step=-1就不會進入
 outage_end_step = -1
 
 
@@ -185,11 +235,13 @@ def set_outage(start_time: str, end_time: str):
     }
 
 
-# 🌟 API 參數：web_island_mode_active（前端手動開關）、operation_mode（AUTO / PSO）
+# @app.get是 FastAPI 的指令用來「新增」資料與處理 http的請求  API 參數：web_island_mode_active（前端手動開關）、operation_mode（AUTO / PSO）只要server開著就會不斷呼叫此函式
 @app.get("/api/grid_status")
+#處理每呼叫一次，就把 OpenDSS 電路模擬往前推進 15 分鐘的功能
+#def 函數名稱(變數 = 預設值)
 def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = "PSO"):
     """動態 API 端點：每呼叫一次，OpenDSS 就推進 15 分鐘並回傳與更新狀態"""
-    global current_step, is_island_mode, outage_start_step, outage_end_step
+    global current_step, is_island_mode, outage_start_step, outage_end_step #用global 弄成全域變數
 
     is_island_mode = web_island_mode_active
 
@@ -199,11 +251,12 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
         current_step = 0
 
     # 換算當下時間戳記
-    current_minute = current_step * 15
-    h = int(current_minute // 60)
-    m = int(current_minute % 60)
-    sim_time_str = f"{h:02d}:{m:02d}"
+    current_minute = current_step * 15 #用current_step從0到96的特性去推斷 現在的時間 例如第0步就是00:00 第1步就是00:15
+    h = int(current_minute // 60) #current_step=1 current_minute=15 > h= 轉換成整數int 的 15÷60=60*0+15  取商數得00
+    m = int(current_minute % 60)  #current_step=1 current_minute=15 > m= 轉換成整數int 的 15÷60=60*0+15  取餘數得15
+    sim_time_str = f"{h:02d}:{m:02d}"#組合得到的結果，並變成字串，到時候包到478行的json裡面給01~05html頁面顯示時間用，還有即時opendss求解用
 
+    #如果目前的步數,落在 outage_start_step 到 outage_end_step 之間，就進入孤島模式
     if outage_start_step <= current_step < outage_end_step:
         is_island_mode = True
     else:

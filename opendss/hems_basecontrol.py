@@ -1,11 +1,12 @@
 import opendssdirect as dss
 import pandas as pd
 import os
-
 from hems_circuit import build_circuit  # 呼叫opendss電路
-from battery_control_logic import decide_battery_action
+from battery_control_logic import decide_battery_action #呼叫
+
+
 # ==========================================
-# 🆕 資料夾路徑（依實際專案規劃：C:\projects\hems-simulation-web\data 底下）
+#   資料夾路徑設定（依實際專案規劃：C:\projects\hems-simulation-web\data 底下）
 #   只有 PROJECT_ROOT 這一行需要依每個人電腦上的實際路徑調整，
 #   RAW_DATA_DIR / PSO_OUTPUT_DIR / OUTPUT_DIR 都從它推導出來，跟 server.py 用同一套規則：
 #   RAW_DATA_DIR   -> data/01_raw，負載/PV 原始資料（會被設備控制頁面改寫的那份）
@@ -18,7 +19,7 @@ RAW_DATA_DIR = os.path.join(PROJECT_ROOT, "data", "01_raw")
 PSO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "04_optimized_pso")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "sample")
 
-
+#opendss執行程式
 
 def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,battery_schedule_filename='battery_usage_two_stage_summer_weekday_15min.csv'):
     """
@@ -27,29 +28,30 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     :param outage_start_step: 停電開始步數 (0-95)
     :param outage_end_step: 停電結束步數 (0-95)
     """
-    # 決定輸出檔案的前綴名稱
+    # 決定輸出檔案的前綴名稱 全部強制成開頭大寫剩下小寫 prefix代表啟動模擬時傳入的模式參數 'baseline' 'pso'  'island'
     prefix = mode.capitalize() 
 
     # 取得並建立電路
-    commands = build_circuit()
+    commands = build_circuit()#呼叫電路
+    #使用 for 迴圈，逐一取出 commands 列表中的每一行指令（cmd)-hems_circuit的52行  commands=[]的所有東西
     for cmd in commands:
-        dss.Text.Command(cmd)
-        if dss.Error.Number() != 0:
-            print(f"❌ OpenDSS 編譯錯誤: {dss.Error.Description()} \n👉 出錯指令: {cmd}")
+        dss.Text.Command(cmd)#透過 opendssdirect（代稱為 dss）的文字介面，將指令字串送到 OpenDSS 模擬引擎中執行
+        if dss.Error.Number() != 0:#利用 if 條件式檢查 OpenDSS 內部物件的錯誤代碼。若代碼不等於 0，代表上一條指令執行失敗。
+            print(f" OpenDSS 編譯錯誤: {dss.Error.Description()} \n👉 出錯指令: {cmd}")
             dss.Error.Number(0)
 
-    print(f"✅ 基準電路建置完成！開始進行 15 分鐘步進模擬 (模式: {mode.upper()})...\n")
-    dss.Text.Command("Set mode=Daily stepsize=15m number=1")
+    print(f" 基準電路建置完成！開始進行 15 分鐘步進模擬 (模式: {mode.upper()})...\n")#將裡面的英文字母全部強制轉換為大寫（例如把 'baseline' 變成 'BASELINE'）
+    dss.Text.Command("Set mode=Daily stepsize=15m number=1") #跑完for迴圈後 再傳送要模擬的步數給opendss知道
 
     total_steps = 96
     
     # ==========================================
-    # 🌟 歷史資料累積陣列 (儲存 96 步的所有資料)
+    # 歷史資料累積陣列 (儲存 96 步的所有資料)
     # ==========================================
-    history_data = []
-    all_violation = []
-    meters_history_data = []
-    bess_history_data = []
+    history_data = [] #存csv檔案 歷史資料的 所有數值 時間 電壓 電流 電錶讀值 電池電量
+    all_violation = [] #存系統異常違規紀錄，電流過大，電壓異常Thermal_Overload（線路過載）或 Voltage_Limit（電壓越限）。  詳細資訊：發生異常的 Element（元件名稱）、當時的 Value（異常數值）、系統的 Limit（容許上限/下限範圍），以及白話文的 Message（如 "電壓越限！(110V系統異常)"）。  
+    meters_history_data = []#存只有電錶數值的東西 Baseline_All_meter.csv檔案
+    bess_history_data = []#存只有電池的東西 Baseline_bess_status.csv檔案
     
     # 樓層設備資料累積字典
     floor_history = {"floor1": [], "floor2": [], "floor3": []}#這是給01~03顯示用的
@@ -69,7 +71,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
 
     # 讀取 PV 與 Load 為了後續作判斷用的
     df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))# 從data\01_raw\pv_curve_15min.csv讀取時間跟pv發電量
-    pv_w_list = df_pv_brain['pv_kw'].tolist() #儲存 時間跟pv發電量
+    pv_w_list = df_pv_brain['pv_kw'].tolist() #將時間跟pv發電量 儲存成 名字叫pv_w_list的陣列
 
 
    # 從data\01_raw\LoadShapes_All_Nodes_15min.csv 讀取所有設備的 消耗功率（這份是設備控制頁面會改寫的那份）
@@ -79,37 +81,38 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     load_cols = [c for c in df_loads_brain.columns if c not in ['Time', 'Hour', 'Minute']]
   
     #將所有設備在相同時間點的消耗功率相加（sum(axis=1)），並轉換成 Python 列表（total_load_w_list），代表整個系統在各個時間點的總負載瓦數
-    total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()
+    total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()#axis=1 代表 橫向（Row-wise）加總程式會把同一個時間點（同一列）的所有緊急負載數值加起來（例如：00:15 的 1F 冰箱 + 抽水馬達 + WiFi...）。加總後的結果會變成單一的一個直行（Pandas Series）。
 
     #  ===== 新增這兩行：將 EP (緊急負載) 獨立計算出來 ===== 
     #ep_cols = [c for c in load_cols if 'ep_' in c.lower()]
-    ep_cols = [c for c in load_cols if c.lower().startswith('ep_')]
+    ep_cols = [c for c in load_cols if c.lower().startswith('ep_')]#篩選ep欄位的資料
     ep_load_w_list = df_loads_brain[ep_cols].sum(axis=1).tolist()
     #  ==================================================
     try:
-        import config
-        print(f"🔎 [清單比對] ep_cols (真實電路): {sorted(ep_cols)}")
-        print(f"🔎 [清單比對] CRITICAL_LOAD_COLUMNS (PSO): {sorted(config.CRITICAL_LOAD_COLUMNS)}")
-        print(f"🔎 [清單比對] 兩者是否相同: {set(ep_cols) == set(config.CRITICAL_LOAD_COLUMNS)}")
-        print(f"🔎 [清單比對] 只在真實電路有、PSO沒有: {set(ep_cols) - set(config.CRITICAL_LOAD_COLUMNS)}")
-        print(f"🔎 [清單比對] 只在PSO有、真實電路沒有: {set(config.CRITICAL_LOAD_COLUMNS) - set(ep_cols)}")
+        import config#專門用來存放「全域設定參數」的獨立模組（檔案）
+        print(f"🔎 [清單比對] ep_cols (真實電路): {sorted(ep_cols)}")#sorted(...) (排序)讓印出來的設備名單按字母排序
+        print(f"🔎 [清單比對] CRITICAL_LOAD_COLUMNS (PSO): {sorted(config.CRITICAL_LOAD_COLUMNS)}")#進行『由小到大（A-Z 或數字）』的排序，並將排序後的結果轉換為字串準備輸出
+        #set(...) (集合轉換)：這是 Python 中非常強大的資料型態轉換。將一個陣列（List）轉換成數學上的「集合（Set）」。集合的特性是「元素不重複」且「無順序性」。
+        print(f"🔎 [清單比對] 兩者是否相同: {set(ep_cols) == set(config.CRITICAL_LOAD_COLUMNS)}")#比對 Python 變數 ep_cols 裡的欄位名稱，set(A) == set(B) 會比較兩個集合內的元素是否「完全相同」，並與 config.py 設定檔中規定的欄位名稱是否『完全一致』（不計較順序），並將 True（相同）或 False（不同）的結果印在螢幕上。
+        print(f"🔎 [清單比對] 只在真實電路有、PSO沒有: {set(ep_cols) - set(config.CRITICAL_LOAD_COLUMNS)}")#set(A) - set(B) 代表「在 A 裡面，但不在 B 裡面」的元素（也就是 A 多出來的東西）。
+        print(f"🔎 [清單比對] 只在PSO有、真實電路沒有: {set(config.CRITICAL_LOAD_COLUMNS) - set(ep_cols)}")#找出哪些欄位『已經定義在最佳化演算法（PSO）的標準設定中，但在目前讀取的真實電路資料（ep_cols）裡卻完全找不到（漏掉了）』，並將這些遺失的欄位印出來。」
     except ImportError:
-        print("⚠️ [清單比對] 找不到 config 模組，可能沒有透過 scenario_switch.py 這條路徑執行")
+        print(" [清單比對] 找不到 config 模組，可能沒有透過 scenario_switch.py 這條路徑執行")
 
     # 如果是 pso 或 island 模式，才讀取 PSO 電池排程，系統會檢查變數 mode。只有當模式為 'pso'（粒子群最佳化演算法模式）或 'island'（孤島/斷網模式）時，才會執行電池排程的讀取。
-    #初始化排程：預先建立一個長度為 total_steps、數值全為 0.0 的列表
-    pso_kw_list = [0.0] * total_steps
+    #初始化排程：預先建立一個長度為 total_steps、數值全為 0.0 的列表建立一個長度為 total_steps 的 Python 串列（List），裡面所有的初始值都是浮點數 0.0，用來預先配置好存放 PSO 演算法在每個時間步長（Step）計算出的千瓦（kW）功率結果的記憶體空間。
+    pso_kw_list = [0.0] * total_steps# 46行定義的96步
 
     #檢查變數 mode
-    if mode in ['pso', 'island']:
+    if mode in ['pso', 'island']:#我在想island模式好像不需要了，因為網站沒有用到
         
         try:
             df_pso = pd.read_csv(os.path.join(PSO_OUTPUT_DIR, battery_schedule_filename))#🆕 從 04_optimized_pso 閱讀pso的排程資料
             #讀取 pso_battery_power.csv 檔案，並將其中的 Power_kW（電池功率千瓦值）欄位轉成列表，覆蓋掉原本的預設值
             pso_kw_list = df_pso['battery_power_kw'].tolist()
-            print(f"✅ 成功載入 PSO 電池排程！({battery_schedule_filename})")
+            print(f" 成功載入 PSO 電池排程！({battery_schedule_filename})")
         except FileNotFoundError:
-            print("⚠️ 找不到 PSO 檔案，退回全天待機 (0 kW)。")
+            print("找不到 PSO 檔案，退回全天待機 (0 kW)。")
 
     if len(pv_w_list) < total_steps:
         pv_w_list.extend([0.0] * (total_steps - len(pv_w_list)))
@@ -168,7 +171,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
             dss.Text.Command("Edit Line.home1F enabled=no")
             dss.Text.Command("Edit Line.home2F enabled=no")
             dss.Text.Command("Edit Line.home3F enabled=no")
-            print(f"⚠️ [{time_str}] 突發停電！ATS 切斷，啟動單相三線 Inverter，並切斷 L1~L3 非緊急負載。")
+            print(f" [{time_str}] 突發停電！ATS 切斷，啟動單相三線 Inverter，並切斷 L1~L3 非緊急負載。")
             
         elif not is_target_outage and is_island_mode:
             is_island_mode = False
@@ -203,7 +206,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
             var_names = dss.CktElement.AllVariableNames()
             var_values = dss.CktElement.AllVariableValues()
             
-            # 🚨 修正 1：恢復您原本最穩健的 SOC 讀取邏輯
+            #  修正 1：恢復您原本最穩健的 SOC 讀取邏輯
             if "%stored" in var_names:
                 soc = float(var_values[var_names.index("%stored")])
             else:
@@ -219,7 +222,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
             if currents_mag: bess_amp = round(currents_mag[0], 2)
 
 
-        # 🚨 關鍵修復：停電時，大腦只看 EP 負載，避免誤判過載！
+        #  關鍵修復：停電時，大腦只看 EP 負載，避免誤判過載！
         pv_kw = pv_w_list[step] / 1000.0   
         if is_island_mode:
             load_kw = ep_load_w_list[step] / 1000.0
@@ -297,7 +300,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
             internal_vars = dict(zip(dss.CktElement.AllVariableNames(), dss.CktElement.AllVariableValues())) #[cite: 7]
             internal_state = internal_vars.get('State', 0)
             
-            # 💡 修正 2：釐清當下是誰在控制電池
+            #  修正 2：釐清當下是誰在控制電池
 
             if is_island_mode:
                 print(f"[{time_str}] 控制權: 孤島緊急控制器 (無視 PSO 預設排程)")
@@ -308,7 +311,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
 
             #    print(f"   物理端輸出: {round(actual_kw, 3)} kW (State: {internal_state})")
         # ==========================================
-        # 🩺 系統健康度稽核 (物理驗證)
+        #  系統健康度稽核 (物理驗證)
         # ==========================================
         # 1. 取得市電輸入總功率 (kW)
         sys_power = dss.Circuit.TotalPower() #[cite: 7]
@@ -336,7 +339,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
         load_deviation = abs(actual_load_kw - expected_load_kw)
 
         if load_deviation > 0.5: 
-            print(f" {time_str}   ⚠️ [負載壓降偏移] 理論應耗: {round(expected_load_kw,2)}kW | 物理實耗: {round(actual_load_kw,2)}kW | 偏差: {round(load_deviation,2)}kW")
+            print(f" {time_str}    [負載壓降偏移] 理論應耗: {round(expected_load_kw,2)}kW | 物理實耗: {round(actual_load_kw,2)}kW | 偏差: {round(load_deviation,2)}kW")
         
 
         if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
@@ -360,11 +363,11 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
             internal_soc = internal_vars.get('%stored', 0)
             internal_losses = internal_vars.get('Losses', 0)
             
-            #print(f"🕒 [{time_str}] PSO指令: {expected_pso} kW")
-            #print(f"   👉 物理端輸出: {round(actual_kw, 3)} kW (差距: {round(expected_pso - actual_kw, 3)} kW)")
-            #print(f"   👉 內部狀態碼 (State): {internal_state} (1=放電, -1=充電, 0=待機)")
-            #print(f"   👉 當前深層 SOC: {round(internal_soc, 2)} %")
-            #print(f"   👉 內部熱損耗: {round(internal_losses, 3)} kW")
+            #print(f" [{time_str}] PSO指令: {expected_pso} kW")
+            #print(f"    物理端輸出: {round(actual_kw, 3)} kW (差距: {round(expected_pso - actual_kw, 3)} kW)")
+            #print(f"    內部狀態碼 (State): {internal_state} (1=放電, -1=充電, 0=待機)")
+            #print(f"    當前深層 SOC: {round(internal_soc, 2)} %")
+            #print(f"    內部熱損耗: {round(internal_losses, 3)} kW")
             #print("-" * 40)
 
 
@@ -573,7 +576,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     base_path = OUTPUT_DIR
     os.makedirs(base_path, exist_ok=True)
 
-    print(f"📊 [{prefix}] 全天累積線損: {round(total_losses_kwh, 3)} kWh")
+    print(f" [{prefix}] 全天累積線損: {round(total_losses_kwh, 3)} kWh")
     
     # 輸出電池狀態與電錶總覽
     pd.DataFrame(bess_history_data).to_csv(os.path.join(base_path, f"{prefix}_bess_status.csv"), index=False, encoding='utf-8-sig')
@@ -591,6 +594,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     print("Generators 列表:", dss.Generators.AllNames())
 
     return df_history, df_warning
+
 
 # (下方 check_system_violations 函式維持原樣，無需變更)
 def check_system_violations(time_str):

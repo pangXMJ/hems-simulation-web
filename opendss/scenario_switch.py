@@ -1,6 +1,6 @@
 """
 scenario_switch.py
-「設備控制與停電控制頁面」按下確認後觸發的同步切換流程（做法 A）。
+「設備控制與停電控制頁面」按下確認後觸發的同步切換流程
 
 流程：
   1. 依前端傳來的 JSON，寫出新的負載 CSV（含設備強制開啟時段的 0/1 遮罩）到
@@ -14,12 +14,12 @@ scenario_switch.py
   5. 驗證過關後，重置即時引擎（server.py 裡常駐的 OpenDSS），讓 01~06 頁面之後讀到新設定
   6. 回傳 PSO 總電價、baseline 總電價、省下金額給前端主頁顯示對比
 
-🆕 資料夾架構（2024 修訂版）：PSO / hems_basecontrol.py / server.py 三邊現在都
+   資料夾架構（2024 修訂版）：PSO / hems_basecontrol.py / server.py 三邊現在都
    讀寫同一個共用的 data 資料夾（data/01_raw、data/04_optimized_pso、data/sample），
    不是三個各自獨立的位置，所以不再需要「算完之後複製一份過去」的同步步驟。
    PROJECT_ROOT 是唯一需要依每個人電腦上實際路徑調整的地方。
 
-⚠️ 這支檔案裡有已知的「暫代方案」，不是完整實作，使用前務必看清楚對應的註解：
+  這支檔案裡有已知的「暫代方案」，不是完整實作，使用前務必看清楚對應的註解：
   - PSO 的停電時間目前是寫死在 config.py 的模組常數，這裡用 monkeypatch + reload
     的方式讓它能依請求動態調整，這是權宜做法，長期建議請隊友把 pso.py 改成
     接受參數，而不是讀模組常數。
@@ -30,7 +30,7 @@ scenario_switch.py
     非常粗略的暫代：每重試一次就把電池最大功率打折，讓下一輪 PSO 更保守。
     這不是規格書要的「讀警告修正邊界條件」，只是先讓流程能跑通、有機會避開過載。
 
-🆕 這次修正額外解決的兩個架構耦合問題（連帶修改了 hems_basecontrol.py）：
+  這次修正額外解決的兩個架構耦合問題（連帶修改了 hems_basecontrol.py）：
   - is_target_outage 原本寫死「必須 mode == 'island'」，導致 baseline 模式永遠
     無法經歷停電，「未優化+停電」這個情境組合根本跑不出來。已改成只要有傳入
     合法的 outage_start_step/outage_end_step，任何 mode 都能進入孤島邏輯。
@@ -47,7 +47,7 @@ import pandas as pd
 
 # ==========================================
 # 路徑設定
-# 🆕 只有 PROJECT_ROOT 這一行需要依每個人電腦上的實際路徑調整。
+# 只有 PROJECT_ROOT 這一行需要依每個人電腦上的實際路徑調整。
 #    三支子系統（PSO / 離線驗證 hems_basecontrol.py / 即時引擎 server.py）
 #    現在都讀寫同一個共用的 data 資料夾，不再是三個各自獨立的位置，
 #    所以也不再需要「算完之後複製一份過去」這個同步步驟了。
@@ -57,9 +57,9 @@ DATA_DIR = PROJECT_ROOT / "data"
 
 RAW_DATA_DIR = DATA_DIR / "01_raw"
 PSO_OUTPUT_DIR = DATA_DIR / "04_optimized_pso"
-OUTPUT_DIR = DATA_DIR / "sample"  # 🆕 離線驗證輸出的 _History.csv / _Warning_Report.csv 存這裡
+OUTPUT_DIR = DATA_DIR / "sample"  #  離線驗證輸出的 _History.csv / _Warning_Report.csv 存這裡
 
-# 🆕 PSO 的三支檔案（config.py / main.py / pso.py）放在獨立的 pso 資料夾，
+#  PSO 的三支檔案（config.py / main.py / pso.py）放在獨立的 pso 資料夾，
 #    跟 scenario_switch.py 自己所在的 opendss 資料夾不同，
 #    要先把這個資料夾加進 sys.path，底下的 `import config`/`import main`/`import pso` 才找得到。
 PSO_CODE_DIR = PROJECT_ROOT / "pso"
@@ -82,27 +82,32 @@ MAX_RETRY = 3
 # ==========================================
 # 階段一：寫出新的負載 CSV（設備強制開啟時段的 0/1 遮罩）
 # ==========================================
-def _time_to_step(time_str: str) -> int:
+def _time_to_step(time_str: str) -> int: #將時間轉成步數 提供給hems_basecontrol.py/server.py 使用96個元素的list做使用
     h, m = map(int, time_str.split(":"))
     return h * 4 + (m // 15)
-
+#CYCLE_PROFILES是固定週期設備的專屬曲線資料
+#因為不是所有設備打開就是同一個功率跑到底，洗衣機，烘衣機這類的東西 會經歷 放水 洗衣 脫水的環節 功率是會上下變動的 所以要額外去自訂他的曲線，工作週期也會長短不一要看設備
 CYCLE_PROFILES = {
-    "ep_washer_an": [1.0, 0.8, 0.5, 0.5, 0.8, 0.6, 0.2, 0.0],
-    "ep_dryer_bn":  [0.0, 0.9, 1.0, 1.0, 0.85, 0.4, 0.0],
+    "ep_washer_an": [1.0, 0.8, 0.5, 0.5, 0.8, 0.6, 0.2, 0.0],#洗衣機
+    "ep_dryer_bn":  [0.0, 0.9, 1.0, 1.0, 0.85, 0.4, 0.0],#烘衣機
 }
 
-def _resample_profile(profile: list, target_len: int) -> np.ndarray:
+#把「幾步的曲線」伸縮成「任意長度」
+def _resample_profile(profile: list, target_len: int) -> np.ndarray:#-> np.ndarray 表示這個函式回傳值的型態是 NumPy 的陣列
     profile = np.asarray(profile, dtype=float)
-    if target_len <= 0:
+    if target_len <= 0:#如果如果目標長度是 0 或負數（不合理的輸入),直接回傳一個空陣列,避免後面的計算出錯
         return np.array([])
     if len(profile) == 1:
         return np.full(target_len, profile[0])
-    x_old = np.linspace(0, 1, len(profile))
-    x_new = np.linspace(0, 1, target_len)
+    #不管原始曲線有幾步（洗衣機8步、烘衣機7步),都先把它們壓縮成「進度百分比」（x_old,從 0% 到 100% 的進度軸),不再用「第幾步」這種絕對數字去描述位置
+    x_old = np.linspace(0, 1, len(profile))#用linspace 函數，在 0 到 1 之間，平均切出與 profile 長度相同數量的點
+    x_new = np.linspace(0, 1, target_len)#把「這次真正想要的長度」（例如使用者設定開啟90分鐘 = 6步),也切成同樣 0~1 的進度軸。
     return np.interp(x_new, x_old, profile)
 
 def _build_pattern_baseline() -> pd.DataFrame:
     """讀 template（額定最大值）+ pattern（0~1 日用電曲線),逐欄相乘出有真實形狀的基準負載"""
+     #TEMPLATE_LOAD_CSV = LoadShapes_All_Nodes_15min_template.csv
+     #PATTERN_LOAD_CSV  = LoadShapes_All_pattern.csv
     if not TEMPLATE_LOAD_CSV.exists():
         raise FileNotFoundError(f"找不到負載模板：{TEMPLATE_LOAD_CSV}")
     if not PATTERN_LOAD_CSV.exists():
@@ -112,24 +117,33 @@ def _build_pattern_baseline() -> pd.DataFrame:
     df_pattern = pd.read_csv(PATTERN_LOAD_CSV)
 
     if len(df_template) != len(df_pattern):
-        raise ValueError(f"template（{len(df_template)}列）跟 pattern（{len(df_pattern)}列）筆數不一致")
-    if not (df_template["Time"].reset_index(drop=True) == df_pattern["Time"].reset_index(drop=True)).all():
+        raise ValueError(f"template（{len(df_template)}列）跟 pattern（{len(df_pattern)}列）筆數不一致") #檢查兩個csv檔案的欄位數有沒有一樣，因為要做相乘的動作
+    #df_template["Time"] 和 df_pattern["Time"]分別取出兩個資料表中名為 "Time" 的那一欄數據（在 Pandas 中這叫 Series）
+    #.reset_index(drop=True)作用：把這一欄的「索引（Index，即最左邊的 0, 1, 2... 行號）」重設，並且丟棄舊的索引（drop=True）
+    #.all()這是 Pandas 的函數，意思是「是否全數皆為 True？」
+    #如果「不是」所有時間都一樣（也就是：只要有任何時間對不起來），就執行 if 裡面的程式碼
+    if not (df_template["Time"].reset_index(drop=True) == df_pattern["Time"].reset_index(drop=True)).all(): #驗證兩份檔案的「時間軸」逐列都對得上
         raise ValueError("template 跟 pattern 的 Time 欄位對不上")
 
+    #驗證設備的名稱有沒有一樣
     device_cols = [c for c in df_template.columns if c not in ("Time", "Hour", "Minute")]
     pattern_cols = [c for c in df_pattern.columns if c not in ("Time", "Hour", "Minute")]
-    missing = set(device_cols) - set(pattern_cols)
-    extra = set(pattern_cols) - set(device_cols)
+    missing = set(device_cols) - set(pattern_cols)#差集運算template 有、但 pattern 沒有
+    extra = set(pattern_cols) - set(device_cols)#差集運算pattern 有、但 template 沒有的多餘欄位
     if missing or extra:
         raise ValueError(f"pattern.csv 欄位對不上：缺 {missing or '無'}，多 {extra or '無'}")
 
-    df_baseline = df_template.copy()
+    df_baseline = df_template.copy()#先複製一份df_template 也就是LoadShapes_All_Nodes_15min_template.csv 的內容
+    #把 Pandas 的資料，轉成 NumPy 的二維陣列格式
+    #為什麼要轉：NumPy 陣列之間做 * 相乘，是逐一對應位置相乘（第1列乘第1列、第2欄乘第2欄……)
+    #將「同一個設備、同一個時間點,額定值乘上使用習慣曲線倍率」
+    #df_baseline[device_cols] = 把算出來的相乘結果，寫回 df_baseline 這個 DataFrame 裡對應的設備欄位
     df_baseline[device_cols] = df_template[device_cols].to_numpy() * df_pattern[device_cols].to_numpy()
     return df_baseline
 
 
 
-def write_load_csv(device_schedules: list):
+def write_load_csv(device_schedules: list):#在按下按鈕後 第414行接受到請求後執行
     df = _build_pattern_baseline()
     df_template = pd.read_csv(TEMPLATE_LOAD_CSV)  # 額定功率一律從這裡查，不用 df.max()
 
@@ -138,20 +152,23 @@ def write_load_csv(device_schedules: list):
         if col not in df.columns:
             raise ValueError(f"負載 CSV 沒有這個設備欄位：{col}")
 
-        start_step = _time_to_step(dev["start_time"])
+        start_step = _time_to_step(dev["start_time"])#把 config裡面的停電開使時間例如15:00 跟關閉時間16:00抓出來改成 步數
         end_step = _time_to_step(dev["end_time"])
         if start_step >= end_step:
-            raise ValueError(f"設備 {col} 的開始時間必須早於結束時間（目前 {dev['start_time']} ~ {dev['end_time']}）")
+            raise ValueError(f"設備 {col} 的開始時間必須早於結束時間（目前 {dev['start_time']} ~ {dev['end_time']}）")#判斷填寫的人 有沒有填反
 
         if "on_power_kw" in dev:
-            rated_power_w = float(dev["on_power_kw"]) * 1000.0
+            rated_power_w = float(dev["on_power_kw"]) * 1000.0 #去 dev 這個資料庫（字典）裡，抓出名字叫 on_power_kw（運轉功率，單位是千瓦/kW）的數值
         else:
             rated_power_w = float(df_template[col].max())
+        #得到一個叫 rated_power_w 的數字——代表「這個設備被強制開啟時,要套用多少瓦特的功率」
 
         window_len = end_step - start_step
 
         if col in CYCLE_PROFILES:
-            values = _resample_profile(CYCLE_PROFILES[col], window_len) * rated_power_w
+            values = _resample_profile(CYCLE_PROFILES[col], window_len) * rated_power_w #
+            #如果我設定的設備 有在CYCLE_PROFILES的list裡面，例如col 剛好是 "ep_washer_an" 或 "ep_dryer_bn" 這種有登記在案的固定週期設備，才走這條路徑
+            #這裡的 window_len 對應到函式定義裡的 target_len 代表 使用者這次在 07_control.html 上,實際設定的開啟時段長度（換算成幾步)
         else:
             values = np.full(window_len, rated_power_w)
 
@@ -166,7 +183,7 @@ def write_load_csv(device_schedules: list):
 # ==========================================
 def _patch_config_and_reload_pso(outage_start: str | None, outage_end: str | None):
     """
-    ⚠️ 暫代做法：config.py 的停電時間是模組載入時就算好的常數
+    做法：config.py 的停電時間是模組載入時就算好的常數
     （OUTAGE_START_INDEX / OUTAGE_END_INDEX），pso.py 用
     `from config import OUTAGE_START_INDEX` 這種方式在「匯入當下」把值複製走，
     之後就算改 config 模組的屬性，pso.py 內部已經綁死舊的值不會變。
@@ -176,7 +193,7 @@ def _patch_config_and_reload_pso(outage_start: str | None, outage_end: str | Non
     但不是乾淨的架構——長期應該讓 pso.py 的函式改成接受
     outage_start_index / outage_end_index 當參數，不要依賴模組常數。
 
-    🆕 這裡也順便強制把 config 的資料夾路徑覆蓋成本檔案開頭定義的共用路徑
+    這裡也順便強制把 config 的資料夾路徑覆蓋成本檔案開頭定義的共用路徑
     （RAW_DATA_DIR / PSO_OUTPUT_DIR），不管隊友的 config.py 檔案實際放在
     專案裡哪個位置、它自己算出來的 BASE_DIR 是什麼，統一都用這裡的路徑為準。
     這樣就不用要求隊友把 config.py 搬到特定資料夾，或跟他協調路徑寫法。
@@ -268,11 +285,11 @@ def run_offline_validation(mode: str, pricing: str,
     呼叫 hems_basecontrol.run_simulation() 跑一次完整 24 小時。
     回傳 (是否過載, 警告 DataFrame, 歷史 DataFrame)
 
-    🆕 現在 is_target_outage 已經跟 mode 解耦，不用再用 mode='island' 當
+    現在 is_target_outage 已經跟 mode 解耦，不用再用 mode='island' 當
     「觸發停電」的暫代手法了：baseline/pso 都可以直接傳入 outage_start_step/
     outage_end_step，沒有停電就傳 -1, -1（函式預設值）。
 
-    🆕 補上存檔步驟：run_simulation() 本身只會存 bess_status/All_meter/floor
+    補上存檔步驟：run_simulation() 本身只會存 bess_status/All_meter/floor
     設備明細這三種 CSV，不會存 _History.csv / _Warning_Report.csv——這兩個
     原本只有 main_hems.py 自己呼叫 save_history_and_warning() 才會產生。
     透過 API（scenario_switch.py）觸發時之前完全沒有這一步，導致離線驗證
@@ -371,7 +388,7 @@ def reset_online_engine(server_module, pricing: str, outage: dict | None = None,
     server_module：直接把 server.py 這個已載入的模組傳進來，
     這樣可以直接改它的全域變數，不用重啟整個 process。
 
-    🆕 改用 server_module.RAW_DATA_DIR / server_module.PSO_OUTPUT_DIR
+    改用 server_module.RAW_DATA_DIR / server_module.PSO_OUTPUT_DIR
     （對應 server.py 裡新的路徑常數），不再是單一個 TARGET_DATA_DIR。
     """
     schedule_filename = BATTERY_SCHEDULE_FILENAMES["two_stage" if pricing == "two_stage" else "three_stage"]
@@ -393,25 +410,19 @@ def reset_online_engine(server_module, pricing: str, outage: dict | None = None,
     server_module.pso_kw_list = df_pso["battery_power_kw"].tolist()
 
     server_module.startup_event()  # 重建電路
-    server_module.current_step = 0
+    server_module.current_step = 0 # 改變的是server.py 裡的那個 current_step 變數
     server_module.is_island_mode = False
     server_module.outage_start_step = outage_start_step
     server_module.outage_end_step = outage_end_step
     server_module.CURRENT_SCENARIO = {"pricing": pricing, "outage": outage}
     
    
-
-
-
-
-
-
-
-
 # ==========================================
 # 主流程：串起以上四個階段，含過載重試 + baseline 對比
+# 因為config_json 這個參數,應該要傳一個 Python 字典進來 所以用dict
+# server_module目前正在執行中的 server.py 這個模組本身
 # ==========================================
-def switch_scenario(config_json: dict, server_module):
+def switch_scenario(config_json: dict, server_module):#兩個參數config_json跟server_module ，函式裡面看到的 config_json["pricing"]、config_json.get("outage")就是到打包過來的config裡面抓資料
     """
     config_json 範例：
     {
@@ -425,12 +436,12 @@ def switch_scenario(config_json: dict, server_module):
     """
     pricing = config_json["pricing"]
 
-    # 🆕 提早驗證，避免打錯字被靜默當成 three_stage 處理
-    if pricing not in ("two_stage", "three_stage"):
-        raise ValueError(f"pricing 必須是 'two_stage' 或 'three_stage'，收到的是：{pricing}")
+    # 提早驗證，避免打錯字被靜默當成 three_stage 處理
+    if pricing not in ("two_stage", "three_stage"): #限定字的內容 如果pricing這個變數的內容不在two_stage跟three_stage  若未來要加時間電價 要在這裡新增
+        raise ValueError(f"pricing 必須是 'two_stage' 或 'three_stage'，收到的是：{pricing}")#有錯誤會顯示
 
-    outage = config_json.get("outage")
-    device_schedules = config_json.get("device_schedules", [])
+    outage = config_json.get("outage")#抓出 json裡面的 停電資訊
+    device_schedules = config_json.get("device_schedules", [])#
 
     outage_start = outage["start_time"] if outage else None
     outage_end = outage["end_time"] if outage else None
@@ -449,10 +460,10 @@ def switch_scenario(config_json: dict, server_module):
                     "message": f"設備 {dev['column']} 的強制開啟時段與停電時段重疊，請調整設定"
                 }
 
-    # --- 階段一：寫負載 CSV（PSO 版跟 baseline 版共用同一份負載資料）---
+    # --- 步驟一：先寫負載 CSV（PSO 版跟 baseline 版共用同一份負載資料）---
     write_load_csv(device_schedules)
 
-    # --- 階段二 + 三：跑 PSO，並驗證有沒有過載，過載就重試 ---
+    # --- 步驟二 + 三：跑 PSO，並驗證有沒有過載，過載就重試 ---
     bess_override = None
     df_pso_history = None
     for attempt in range(MAX_RETRY + 1):
@@ -480,7 +491,7 @@ def switch_scenario(config_json: dict, server_module):
         current_max = bess_override or 5.0
         bess_override = round(current_max * 0.8, 2)
 
-    # --- 🆕 階段三之二：用同一份負載資料額外跑一次 baseline，取得對比用的未優化總電價 ---
+    # 階段三之二：用同一份負載資料額外跑一次 baseline，取得對比用的未優化總電價 ---
     # 這裡不管過不過載都會記錄下來，因為規格書寫的是「未優化電路不放上網站即時運行，
     # 只在背景跑一次拿電價做對比」，baseline 過載與否不影響 PSO 版本能不能上線。
     _, df_baseline_warning, df_baseline_history = run_offline_validation(
@@ -490,15 +501,19 @@ def switch_scenario(config_json: dict, server_module):
         outage_end_step=outage_end_step,
     )
 
-    pso_total_cost = compute_total_cost(df_pso_history, pricing)
+    #讀 df_baseline_history 裡「總電錶T」的累積 kWh
+    #相鄰兩步相減,算出每一步實際買了多少電
+    #對照電價表,依照每一步落在離峰還是尖峰,乘上對應價格
+    #分別加總兩個模式消耗的總功率
+    pso_total_cost = compute_total_cost(df_pso_history, pricing) 
     baseline_total_cost = compute_total_cost(df_baseline_history, pricing)
 
-    # 🆕 把「電池剩餘電量」折算成資產價值，從成本裡扣掉（存越多電，等於變相少花錢）
+    # 把「電池剩餘電量」折算成資產價值，從成本裡扣掉（存越多電，等於變相少花錢）
     pso_battery_asset_value = compute_battery_asset_value(df_pso_history, pricing)
     baseline_battery_asset_value = compute_battery_asset_value(df_baseline_history, pricing)
 
-    pso_adjusted_cost = round(pso_total_cost - pso_battery_asset_value, 2)
-    baseline_adjusted_cost = round(baseline_total_cost - baseline_battery_asset_value, 2)
+    pso_adjusted_cost = round(pso_total_cost - pso_battery_asset_value, 2)#pso_adjusted_cost是pso優化的電費比較後的數值
+    baseline_adjusted_cost = round(baseline_total_cost - baseline_battery_asset_value, 2) #baseline_adjusted_cost是未優化的電費比較後的數值
 
     savings = round(baseline_adjusted_cost - pso_adjusted_cost, 2)
 
@@ -522,4 +537,4 @@ def switch_scenario(config_json: dict, server_module):
         "baseline_adjusted_cost": baseline_adjusted_cost,
         "savings": savings,                              # 現在是用 adjusted_cost 算出來的
         "baseline_had_overload": not df_baseline_warning.empty,
-    }
+    }#這裡面的東西會被送到 07網站去顯示 730行

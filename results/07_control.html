@@ -6,6 +6,7 @@
 <title>HEMS — 設備控制與停電模擬</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+#-----------------------css開頭
 <style>
 :root{
   --bg:#050506;
@@ -173,15 +174,17 @@ a{color:inherit;}
 }
 .add-range-btn:hover{ background:rgba(200,255,77,0.18); }
 
-/* ---------- 確認按鈕 ---------- */
-.confirm-bar{ position:sticky; bottom:0; padding:24px 5vw; background:linear-gradient(to top, var(--bg) 60%, transparent); }
+/* ---------- 07頁面的確認計算按鈕 ---------- */
+.confirm-bar{ position:sticky; bottom:0; padding:24px 5vw; background:linear-gradient(to top, var(--bg) 60%, transparent); } /*.confirm-bar是class（類別）選擇器，使用sticky讓他不會跟著視窗移動而消失*/
+/*這個是按鈕的樣式，用來表示按鈕的細節 要先 all:unset不然會套用成瀏覽器那種醜醜的   margin:0 auto表示文字左右自動置中 accent是在style的地方設定的青綠色，Bebas Neue是字體*/
+/*cursor:pointer 當滑鼠移上去時，游標會變成「手指」的樣子 */
 .confirm-btn{
   all:unset; display:block; width:100%; max-width:1360px; margin:0 auto; text-align:center;
   padding:20px; background:var(--accent); color:#050506; font-family:'Bebas Neue';
   font-size:22px; letter-spacing:1px; cursor:pointer; border-radius:2px; transition:.2s;
 }
-.confirm-btn:hover{ background:#d8ff70; }
-.confirm-btn:active{ transform:scale(0.995); }
+.confirm-btn:hover{ background:#d8ff70; }/*:hover 是「偽類選擇器」，意思是「當滑鼠移到這個元素上面的時候」才套用的樣式設定滑鼠移上去時，背景色會變成一個稍微不同的淺綠色*/
+.confirm-btn:active{ transform:scale(0.95); }/*:active 是「滑鼠正在按下的那一瞬間」——這裡設定按下的當下,按鈕會縮小到原本的95%,製造一種「按下去有回饋感」的效果，模擬真實按鈕被壓下去的感覺。
 
 footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); font-size:11.5px; text-align:center; font-family:'Space Mono';}
 
@@ -190,10 +193,10 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
   display:none; position:fixed; inset:0; background:rgba(5,5,6,0.88); z-index:999;
   align-items:center; justify-content:center; color:var(--white); font-family:'Noto Sans TC',sans-serif;
 }
-@keyframes switchSpin{ to{ transform:rotate(360deg); } }
+@keyframes switchSpin{ to{ transform:rotate(360deg); } }/* 動畫軌跡定義 (@keyframes) 定義了一個名稱叫 switchSpin 的動畫 transform:rotate(360deg);，意思是讓物件從原本的角度順時針旋轉整整一圈（360 度）。 */
 #switchOverlaySpinner{
   width:48px; height:48px; margin:0 auto 24px; border:4px solid rgba(255,255,255,0.15);
-  border-top-color:var(--accent); border-radius:50%; animation:switchSpin 0.9s linear infinite;
+  border-top-color:var(--accent); border-radius:50%; animation:switchSpin 0.9s linear infinite;/*linear：勻速運動，旋轉過程中不會忽快忽慢。infinite：無限循環，只要這個元素存在，就會不停地轉下去。*/
 }
 #switchOverlayText{font-family:'Bebas Neue'; font-size:26px; letter-spacing:0.5px;}
 #switchOverlaySubText{font-family:'Space Mono'; font-size:12px; color:var(--dim); margin-top:10px;}
@@ -209,6 +212,7 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
 .result-savings span:last-child{font-family:'Bebas Neue'; font-size:26px;}
 #resultOverloadNote{display:none; margin-top:14px; font-size:11.5px; color:#ffb454; font-family:'Noto Sans TC'; line-height:1.6;}
 </style>
+<!-----------------------css結尾-->
 </head>
 <body>
 
@@ -236,7 +240,7 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
     <p class="tc">必選其一，切換後全站電費計算都會依此重新計算。</p>
   </div>
   <div class="segmented">
-    <input type="radio" name="pricing" id="pricing-two" value="two_stage" checked>
+    <input type="radio" name="pricing" id="pricing-two" value="two_stage" checked> #記錄電價的元素
     <label for="pricing-two">兩段式</label>
     <input type="radio" name="pricing" id="pricing-three" value="three_stage">
     <label for="pricing-three">三段式</label>
@@ -260,7 +264,7 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
         <p>預設關閉。開啟後會展開時間選擇，模擬市電中斷、切換至孤島供電的情境。</p>
       </div>
       <label class="toggle-switch">
-        <input type="checkbox" id="outageToggle" onchange="toggleOutagePanel()">
+        <input type="checkbox" id="outageToggle" onchange="toggleOutagePanel()"> <!--記錄啟用停電情境開關元素-->
         <span class="toggle-slider"></span>
       </label>
     </div>
@@ -292,7 +296,7 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
 </div>
 
 <!-- ===== 確認按鈕 ===== -->
-<div class="confirm-bar">
+<div class="confirm-bar"> <!-- 套用178行的css按鈕類別 -->
   <button class="confirm-btn" id="confirmSwitchBtn">確認設定並重新計算排程</button>
 </div>
 
@@ -505,7 +509,7 @@ function timeToMinutes(t){
   return h * 60 + m;
 }
 
-/* 🆕 「設備控制」預設情況下大多用在非 EP 的一般家電，但特殊情況下（例如想手動測試
+/*  「設備控制」預設情況下大多用在非 EP 的一般家電，但特殊情況下（例如想手動測試
    某個 EP 迴路的行為）仍然開放使用者對 EP 設備排程，所以兩種設備都留在清單裡，
    但要分開處理停電時的意義：
    - EP 設備：停電時仍然通電（孤島供電），強制開啟太多是真正的超載風險 → 擋下來
@@ -548,14 +552,14 @@ function collectDeviceSchedules(){
     if (!cb.checked) return;
     const idx = cb.dataset.idx;
 
-    // 🆕 一個設備底下可能有多組時段（多個 .range-row），全部收集起來，
+    //  一個設備底下可能有多組時段（多個 .range-row），全部收集起來，
     //    後端 scenario_switch.py 的 write_load_csv() 會把同一個 column 的多筆時段疊加成同一個遮罩
     document.querySelectorAll(`#rangeList-${idx} .range-row`).forEach(row => {
       const triggers = row.querySelectorAll('.time-trigger');
       schedules.push({
         column: DEVICE_LIST[idx].column,
-        start_time: triggers[0].dataset.value,
-        end_time: triggers[1].dataset.value
+        start_time: triggers[0].dataset.value,//停電時間啟
+        end_time: triggers[1].dataset.value//停電時間關
        
       });
     });
@@ -563,7 +567,7 @@ function collectDeviceSchedules(){
   return schedules;
 }
 
-/* 🆕 自訂時間選擇器：黑底、綠色選中，取代原生 <input type="time"> 選單
+/* 自訂時間選擇器：黑底、綠色選中，取代原生 <input type="time"> 選單
    分鐘選項固定只有 00/15/30/45，使用者結構上就不可能選到別的值，
    不再需要事後四捨五入的判斷式了。 */
 let activeTimeTrigger = null;
@@ -611,7 +615,7 @@ function selectTimePart(type, val){
   if (type === 'h') h = val; else m = val;
   const newVal = `${h}:${m}`;
 
-  activeTimeTrigger.dataset.value = newVal;
+  activeTimeTrigger.dataset.value = newVal;//時間選擇器.time-trigger 元素的 dataset.value 屬性
   activeTimeTrigger.textContent = newVal;
 
   const panel = document.getElementById('customTimePicker');
@@ -642,30 +646,34 @@ document.addEventListener('DOMContentLoaded', () => {
 /* hasConflict() 已被 checkOutageDeviceWarnings() 取代，需要區分 EP / 非EP 設備分別處理 */
 
 /* ============================================================
-   確認送出：呼叫 /api/switch_scenario
+   確認送出：呼叫 /api/switch_scenario，746行有寫出發此函數的條件
+   觸發後
+   step1 蒐集config的內容，把我07網站上面的按鈕元素抄下來並創造config
+   step2 拿config去檢查內容
+   step3 沒問題之後把config的內容轉成json檔案的字串 
    ============================================================ */
 async function confirmSwitch() {
   const config = {
-    pricing: document.querySelector('input[name="pricing"]:checked').value,
-    outage: document.getElementById('outageToggle').checked
+    pricing: document.querySelector('input[name="pricing"]:checked').value,/*抓文件2段式電價還是3段式*/
+    outage: document.getElementById('outageToggle').checked/*抓停電時間的設定值 或是null空值*/
       ? {
           start_time: document.getElementById('outageStart').dataset.value,
           end_time: document.getElementById('outageEnd').dataset.value
         }
       : null,
-    device_schedules: collectDeviceSchedules()
+    device_schedules: collectDeviceSchedules()/*抓每個被打開開關的設備、並每個時段各記錄一筆資訊*/
   };
 
-  const warnings = checkOutageDeviceWarnings(config);
+  const warnings = checkOutageDeviceWarnings(config);/*在真正打 API 之前，先跑 checkOutageDeviceWarnings(config)*/
 
-  // 🆕 EP 設備在停電時仍會通電，強制開啟太多是真正的超載風險 → 直接擋下來
+  //如果有 EP 設備時段跟停電重疊 → 直接 alert() 擋下來，不會送出任何東西
   if (warnings.overload.length > 0) {
     alert(`⚠️ 設定衝突警告：以下 EP 緊急負載在停電期間被強制開啟，加總可能導致孤島系統過載無法排程，請調整時間或設備：\n${warnings.overload.join('、')}`);
     return;
   }
 
-  // 🆕 非 EP 設備停電時整條線路沒電，強制開啟這段時間只是設定無效，不是超載風險
-  //    → 提示使用者、讓他自己決定要不要照這樣繼續（例如設定本來就跨越停電前後兩段，只是重疊部分無效而已）
+  // 非 EP 設備停電時整條線路沒電，強制開啟這段時間只是設定無效，不會有超載風險
+  // 提示使用者、讓他自己決定要不要照這樣繼續（例如設定本來就跨越停電前後兩段，只是重疊部分無效而已）
   if (warnings.ineffective.length > 0) {
     const proceed = confirm(
       `提示：以下設備所在迴路在停電期間會被市電斷路器（ATS）切離電網，這段時間內即使設定強制開啟也不會實際通電：\n${warnings.ineffective.join('、')}\n\n是否仍要以目前設定繼續？`
@@ -673,47 +681,59 @@ async function confirmSwitch() {
     if (!proceed) return;
   }
 
-  const overlay = document.getElementById('switchOverlay');
-  const spinner = document.getElementById('switchOverlaySpinner');
-  const overlayText = document.getElementById('switchOverlayText');
-  const subText = document.getElementById('switchOverlaySubText');
-  const resultBox = document.getElementById('switchResultBox');
+  const overlay = document.getElementById('switchOverlay');/*抓出等待畫面的容器*/
+  const spinner = document.getElementById('switchOverlaySpinner');/*轉圈圈的動畫*/
+  const overlayText = document.getElementById('switchOverlayText');/*顯示切換中的文字 css設定在 317行 */ 
+  const subText = document.getElementById('switchOverlaySubText');/*顯示「通常需要 10~60 秒...」的那行小字*/
+  const resultBox = document.getElementById('switchResultBox');/*顯示電費對比結果的那個區塊*/
 
-  overlay.style.display = 'flex';
-  spinner.style.display = 'block';
-  overlayText.textContent = '切換模式中...';
-  subText.style.display = 'block';
-  subText.textContent = '通常需要 10~60 秒，請稍候';
-  resultBox.style.display = 'none';
+  overlay.style.display = 'flex';/*將名為 overlay 的 HTML 元素在畫面上顯示出來，並將其排版模式設定為 Flexbox*/
+  spinner.style.display = 'block';/*將名為 spinner圓形旋轉的動態效果顯示出來*/
+  overlayText.textContent = '切換模式中...';/*把畫面上主要提示文字（overlayText）的內容，改成 「切換模式中...」*/
+  subText.style.display = 'block';/*顯示輔助說明，控制要不要顯示 'block' 代表 顯示，而且獨佔一整行 'none'，代表完全不顯示*/
+  subText.textContent = '通常需要 10~60 秒，請稍候';/*顯示輔助說明文字*/
+  resultBox.style.display = 'none';/*短暫出現電價比較的那一個小視窗*/
 
+  //送http請求到switch_scenario 代表請求要送往你目前網站下的 api/switch_scenario 這個網址
+  //
   try {
     const res = await fetch('/api/switch_scenario', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(config)
+      method: 'POST',//指定傳輸方法為 POST，POST 用來新增、修改或傳送大量/敏感資料。這裡因為要把設定檔傳給伺服器儲存，所以使用 POST
+      headers: {'Content-Type': 'application/json'},//設定請求標頭，告訴後端伺服器 我這次的資料是 JSON 格式
+      body: JSON.stringify(config)//將資料放入請求主體 (Body)，並透過 JSON.stringify() 將 JavaScript 的物件 config 轉換成純文字的 JSON 字串。
+      //因為網路傳輸只能傳送字串或二進位資料，不能直接傳送 JavaScript 的記憶體物件。這行就像是把包裹打包、封箱 
     });
 
+    /*res在700行 res.ok 是什麼：瀏覽器根據「HTTP 狀態碼」自動算出來的布林值*/
+    /*每一次 HTTP 回應,都會附帶一個「狀態碼」（status code）——這是一個三位數的數字,用來表示「這次請求的結果如何」。常見的有：
+      200：成功
+      404：找不到這個網址
+      500：伺服器內部發生錯誤（例如你的 Python 程式碼裡跑出了沒被接住的例外，像我們之前處理過的 NameError、TypeError 那些)
+      res.ok 這個屬性,是瀏覽器自動幫你判斷「狀態碼是不是落在 200~299 這個『成功』的範圍內」——如果是,res.ok 就是 true*/
+
+    /*!res.ok 不成立，也就是 請求失敗了*/  
     if (!res.ok) {
       spinner.style.display = 'none';
-      overlayText.textContent = '設定有誤，請確認電價方案等參數是否正確';
-      subText.textContent = `(HTTP ${res.status})`;
-      setTimeout(() => { overlay.style.display = 'none'; }, 3000);
-      return;
+      overlayText.textContent = '設定有誤，請確認電價方案等參數是否正確';/*顯示錯誤*/
+      subText.textContent = `(HTTP ${res.status})`;/*顯示res 回傳出來的錯誤代碼 例如:500,404等等*/
+      setTimeout(() => { overlay.style.display = 'none'; }, 3000); /*箭頭函式，setTimeout(函式, 3000) 的意思是「3000毫秒（也就是3秒)之後，才執行括號裡那個函式」*/
+      return; /*終止程式*/
     }
 
-    const data = await res.json();
+    const data = await res.json();/*把回應內容本身（那包 JSON 文字）解析成 JavaScript 可以操作的物件，存進 data*/
 
     if (data.status === 'success') {
-      spinner.style.display = 'none';
+      spinner.style.display = 'none';/*將原本在691行的動畫關掉*/
       overlayText.textContent = '切換成功！';
-      subText.style.display = 'none';
+      subText.style.display = 'none';/*文字也關掉*/
 
-      document.getElementById('resultBaselineCost').textContent = `NT$ ${data.baseline_adjusted_cost}`;
-      document.getElementById('resultPsoCost').textContent = `NT$ ${data.pso_adjusted_cost}`;
+      document.getElementById('resultBaselineCost').textContent = `NT$ ${data.baseline_adjusted_cost}`;/*在scenario_switch的503行算出來的*/
+      document.getElementById('resultPsoCost').textContent = `NT$ ${data.pso_adjusted_cost}`;/*在scenario_switch的504行算出來的*/
 
-      const savingsEl = document.getElementById('resultSavings');
+      /*判斷是省錢還是多花錢,決定顯示什麼顏色跟文字*/
+      const savingsEl = document.getElementById('resultSavings');/*宣告 Constant（常數）變數savingsEl*/
       if (data.savings >= 0) {
-        savingsEl.textContent = `省下 NT$ ${data.savings}`;
+        savingsEl.textContent = `省下 NT$ ${data.savings}`;/*Math.abs(...) 是「取絕對值」*/
         savingsEl.style.color = 'var(--accent)';
       } else {
         savingsEl.textContent = `多花 NT$ ${Math.abs(data.savings)}`;
@@ -725,12 +745,13 @@ async function confirmSwitch() {
       }
       resultBox.style.display = 'block';
 
-      setTimeout(() => { window.location.href = 'hems_index.html'; }, 2500);
+      setTimeout(() => { window.location.href = 'hems_index.html'; }, 3000);/*延遲3秒導向主頁*/
 
     } else if (data.status === 'conflict') {
       overlay.style.display = 'none';
       alert(`⚠️ ${data.message}`);
-
+      
+     /*在scenario_switch的476行會有機會return出status==failed*/ 
     } else if (data.status === 'failed') {
       spinner.style.display = 'none';
       overlayText.textContent = data.message;
@@ -749,10 +770,14 @@ async function confirmSwitch() {
 window.addEventListener('scroll', () => {
   document.getElementById('topbar').classList.toggle('scrolled', window.scrollY > 40);
 });
-
+/*IIFE立即執行函數 function boot(){}(); 剛開網站就會直接執行*/
 (function boot(){
   renderDeviceGrid();
-  document.getElementById('confirmSwitchBtn').addEventListener('click', confirmSwitch);
+  /*在網頁上找到一個 ID 叫做 confirmSwitchBtn 的按鈕，並設定成「當使用者點擊（click）這個按鈕時，立刻自動執行 confirmSwitch 這個函數655行*/
+  /*document.getElementById('confirmSwitchBtn') 去網頁（HTML）中尋找*/
+  /*.addEventListener(...)幫這個找到的按鈕「加裝一個感應器」*/
+  /*('click', confirmSwitch) 'click'（動作類型）當使用者用滑鼠「點擊」這個按鈕時。confirmSwitch：一旦被點擊了，就立刻去呼叫並執行名為 confirmSwitch 的函數*/
+  document.getElementById('confirmSwitchBtn').addEventListener('click', confirmSwitch);/*確認按鈕點下去後觸發的程式*/
 })();
 </script>
 </body>

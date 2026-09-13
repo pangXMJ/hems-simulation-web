@@ -1,10 +1,15 @@
-import opendssdirect as dss
-import os
-from hems_basecontrol import run_simulation # 注意：從 hems_basecontrol 引入的函數名稱已更新為 run_simulation
+#import套件
+import opendssdirect as dss 
+import os #負責跟作業系統溝通的工具包
+from hems_basecontrol import run_simulation # 注意：從 hems_basecontrol 引入的函數 run_simulation 用來執行計算的
+
+#定義一個函數來 將 HH:MM 格式轉換為 15 分鐘步進的步數 (0-95)
 
 def time_to_step(time_str):
-    """將 HH:MM 格式轉換為 15 分鐘步進的步數 (0-95)"""
     try:
+        #利用split的功能掃描整個字串，在遇到冒號進行截斷，並將內容time_str轉成字串 例:[10],[15]
+        #使用映射函數 (Map Function)-map(指定數值資料型態,變數)會把得到的time_str轉成int整數的型態，存入h跟m
+        
         h, m = map(int, time_str.split(':'))
         step = (h * 60 + m) // 15
         if 0 <= step <= 95:
@@ -12,14 +17,17 @@ def time_to_step(time_str):
         else:
             return -1
     except ValueError:
-        return -1
+        return -1 #數值錯誤的偵測與回報
 
+#定義一個函數 處理存檔
+#輸入df_history, df_warning, mode_prefix 的資料
+#"""統一處理存檔與印出結果的副程式，自動加上前綴避免檔案覆蓋"""
 def save_history_and_warning(df_history, df_warning, mode_prefix):
-    """統一處理存檔與印出結果的副程式，自動加上前綴避免檔案覆蓋"""
-    base_path = r".\data\sample"
-    os.makedirs(base_path, exist_ok=True)
     
-    history_path = os.path.join(base_path, f"{mode_prefix}_History.csv")
+    base_path = r".\data\sample" 
+    os.makedirs(base_path, exist_ok=True)  #makedirs() (多層次建檔) 如果原本電腦沒有資料夾 就會幫你創造一個
+    
+    history_path = os.path.join(base_path, f"{mode_prefix}_History.csv")#把base_path join(連接字串) 到f"{mode_prefix}_History.csv 
     warning_path = os.path.join(base_path, f"{mode_prefix}_Warning_Report.csv")
     
     try:
@@ -46,8 +54,8 @@ def main():
     # 階段一：Baseline 模擬 (傳統淨功率邏輯)
     # ==========================================
     print("▶️ [階段一] 開始執行 (Baseline) 未經最佳化基準模擬...")
-    df_base_history, df_base_warning = run_simulation(mode='baseline')
-    save_history_and_warning(df_base_history, df_base_warning, "Baseline")
+    df_base_history, df_base_warning = run_simulation(mode='baseline')#跑run_simulation的baseline模式得到 df_base_history跟df_base_warning
+    save_history_and_warning(df_base_history, df_base_warning, "Baseline")#呼叫save_history_and_warning 把 df_base_history跟df_base_warning丟進去
     
     print("\n" + "-"*60 + "\n")
 
