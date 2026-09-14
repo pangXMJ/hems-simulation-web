@@ -326,7 +326,7 @@ def run_offline_validation(mode: str, pricing: str,
 
     schedule_filename = BATTERY_SCHEDULE_FILENAMES["two_stage" if pricing == "two_stage" else "three_stage"]
 
-    df_history, df_warning = hems_basecontrol.run_simulation(
+    df_history, df_warning = hems_basecontrol.run_simulation(  #從這裡去觸發opendss的計算
         mode=mode,
         outage_start_step=outage_start_step,
         outage_end_step=outage_end_step,

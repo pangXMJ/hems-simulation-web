@@ -10,6 +10,15 @@ import pandas as pd
 
 """
 運行流程
+打開伺服器的瞬間
+python server.py
+  → uvicorn.run(...)
+    → Uvicorn 啟動 ASGI 應用程式
+      → 觸發內部 "startup" 生命週期事件（框架內部，你看不到）
+        → FastAPI 自動呼叫所有掛在 @app.on_event("startup") 上的函式
+          → startup_event() 被執行            ← 這裡才真的跑到你的程式碼
+
+
 從07頁面開始
 在07頁面設定每個設備 電價 停電的屬性 在你按下按鈕之前 早就已經被瀏覽器記錄在對應的 HTML 元素本身裡了
 
@@ -85,7 +94,7 @@ import scenario_switch  #  第4階段：設備控制/停電控制頁面確認後
 from hems_circuit import build_circuit
 
 # ==========================================
-# 🚀 FastAPI 伺服器設定
+#  FastAPI 伺服器設定
 # ==========================================
 app = FastAPI(
     title="HEMS Smart Switchboard API",
@@ -117,13 +126,13 @@ total_load_w_list = df_loads_brain[load_cols].sum(axis=1).tolist()
 
 try:
     df_pso = pd.read_csv(os.path.join(PSO_OUTPUT_DIR, "battery_usage_two_stage_summer_weekday_15min.csv"))
-    pso_kw_list = df_pso['battery_power_kw'].tolist()  # 🆕 改用欄位名稱讀取，不用位置索引，比較不怕欄位順序變動
+    pso_kw_list = df_pso['battery_power_kw'].tolist()  #  改用欄位名稱讀取，不用位置索引，比較不怕欄位順序變動
 except Exception as e:
-    print(f"⚠️ PSO 讀取失敗，預設為全天待機。原因: {e}")
+    print(f" PSO 讀取失敗，預設為全天待機。原因: {e}")
     pso_kw_list = [0.0] * 96
 
 
-@app.on_event("startup")
+@app.on_event("startup")#server執行的那一刻，這行程式就會開始動
 def startup_event():
     """伺服器啟動時，載入並初始化 OpenDSS 實體電路"""
     commands = build_circuit()
@@ -133,7 +142,7 @@ def startup_event():
     dss.Text.Command("Set mode=Daily stepsize=15m number=1")
     dss.Text.Command("Edit Storage.Battery_Sys DispMode=External")
 
-    print("✅ OpenDSS 數位孿生模型已載入，等待 API 呼叫執行潮流計算...")
+    print(" OpenDSS 數位孿生模型已載入，等待 API 呼叫執行潮流計算...")
 
 
 # ==========================================
@@ -272,12 +281,12 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
     # ==========================================
     if is_island_mode:
         dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
-        dss.Text.Command("Edit Line.home1F enabled=no")   # 🆕 切斷 L1
-        dss.Text.Command("Edit Line.home2F enabled=no")   # 🆕 切斷 L2
-        dss.Text.Command("Edit Line.home3F enabled=no")   # 🆕 切斷 L3
+        dss.Text.Command("Edit Line.home1F enabled=no")   #  切斷 L1
+        dss.Text.Command("Edit Line.home2F enabled=no")   #  切斷 L2
+        dss.Text.Command("Edit Line.home3F enabled=no")   #  切斷 L3
 
         if soc_for_island_check <= 1.0:
-             # 🆕 電池撐不住了：連孤島電壓源都關掉，讓 EP 面板真實反映「微電網崩潰、沒電」
+             #  電池撐不住了：連孤島電壓源都關掉，讓 EP 面板真實反映「微電網崩潰、沒電」
             dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
             dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
         else:
@@ -285,9 +294,9 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
             dss.Text.Command("Edit Vsource.BESS_GFM_L2 phases=1 bus1=EP_panel.2 basekv=0.11 pu=1.0 angle=180 enabled=yes")
     else:
         dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
-        dss.Text.Command("Edit Line.home1F enabled=yes")   # 🆕 恢復 L1
-        dss.Text.Command("Edit Line.home2F enabled=yes")   # 🆕 恢復 L2
-        dss.Text.Command("Edit Line.home3F enabled=yes")   # 🆕 恢復 L3
+        dss.Text.Command("Edit Line.home1F enabled=yes")   #  恢復 L1
+        dss.Text.Command("Edit Line.home2F enabled=yes")   #  恢復 L2
+        dss.Text.Command("Edit Line.home3F enabled=yes")   #  恢復 L3
         dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
         dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
 
@@ -315,7 +324,7 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
     current_pso_kw = float(pso_kw_list[current_step])
 
     # ==========================================
-    # 🧠 呼叫共用電池決策模組，取代原本寫死在這裡的 if/elif
+    #  呼叫共用電池決策模組，取代原本寫死在這裡的 if/elif
     # ==========================================
     action = decide_battery_action(
         is_island_mode=is_island_mode,
@@ -556,12 +565,14 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
 
 
 # ==========================================
-# 🌐 靜態網頁伺服器
+#  網頁伺服器
 # ==========================================
+#靜態檔案掛載：app.mount("/", StaticFiles(...), name="static")
 app.mount("/", StaticFiles(directory=SERVER_DIR, html=True), name="static")
 
+#只有當這個 .py 檔案是被直接執行時，才跑底下的程式碼
 if __name__ == "__main__":
     print("🚀 FastAPI 伺服器啟動中...")
     print("👉 測試 API 端點: http://127.0.0.1:8000/api/grid_status")
     print("👉 觀看儀表板: http://127.0.0.1:8000/hems_index.html")
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)#在

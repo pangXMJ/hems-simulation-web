@@ -121,7 +121,7 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
       <div class="svg-container">
       <svg viewBox="0 0 900 420" width="100%" height="100%">
         
-       <!-- 🌟 修復：加入 gradientUnits="userSpaceOnUse" 解決水平線漸層消失的問題 -->
+       <!-- 修復：加入 gradientUnits="userSpaceOnUse" 解決水平線漸層消失的問題 -->
         <defs>
           <!-- x1="110" 代表市電起點，x2="450" 代表配電盤終點，讓漸層完美貼合流動路徑 -->
           <linearGradient id="hybridGrad" x1="110" y1="0" x2="450" y2="0" gradientUnits="userSpaceOnUse">
@@ -206,7 +206,7 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
     
     <!-- EP 主匯流排 -->
     <div class="panel-card ep">
-      <h2 class="panel-title" style="color:var(--ep-color);">NODE: EP <div class="status-dot"></div></h2>
+      <h2 class="panel-title" style="color:var(--ep-color);">NODE:Panel EP <div class="status-dot"></div></h2>
       <div class="data-grid">
         <div class="phase-group">
           <div class="phase-title">LINE 1 (L1)</div>
@@ -223,7 +223,7 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
 
     <!-- L1 負載 -->
     <div class="panel-card load">
-      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L1 (1F)<div class="status-dot"></div></h2>
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD:Panel L1 (1F)<div class="status-dot"></div></h2>
       <div class="data-grid">
         <div class="phase-group">
           <div class="phase-title">LINE 1 (L1)</div>
@@ -240,7 +240,7 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
 
     <!-- L2 負載 -->
     <div class="panel-card load">
-      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L2 (2F)<div class="status-dot"></div></h2>
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD:Panel L2 (2F)<div class="status-dot"></div></h2>
       <div class="data-grid">
         <div class="phase-group">
           <div class="phase-title">LINE 1 (L1)</div>
@@ -257,7 +257,7 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
 
     <!-- L3 負載 -->
     <div class="panel-card load">
-      <h2 class="panel-title" style="color:var(--load-color);">LOAD: L3 (3F)<div class="status-dot"></div></h2>
+      <h2 class="panel-title" style="color:var(--load-color);">LOAD:Panel L3 (3F)<div class="status-dot"></div></h2>
       <div class="data-grid">
         <div class="phase-group">
           <div class="phase-title">LINE 1 (L1)</div>
@@ -303,10 +303,10 @@ function setPowerSource(sourceType, bessState) {
     // 判斷是否為「混合併網供電」
     if (bessState === 'DISCHARGING') {
       badge.className = 'power-source-badge source-hybrid';
-      icon.textContent = '⚡+🔋';
+      icon.textContent = '市電+電池';
       text.innerHTML = '<span style="color:var(--grid-color)">GRID</span> & <span style="color:var(--batt-color)">BESS</span> (併網混合供電)';
       
-      // 🌟 混合模式：將幹線電流顏色改為漸層 (青色過渡到黃色)
+      // 混合模式：將幹線電流顏色改為漸層 (青色過渡到黃色)
       const hybridColor = 'url(#hybridGrad)';
       pGridT.style.stroke = hybridColor;
       pTEp.style.stroke = hybridColor;
@@ -315,10 +315,10 @@ function setPowerSource(sourceType, bessState) {
       pTL3.style.stroke = hybridColor;
     } else {
       badge.className = 'power-source-badge source-grid';
-      icon.textContent = '⚡';
+      icon.textContent = '市電';
       text.textContent = 'GRID POWER (純市電供電)';
 
-      // 🌟 純市電模式：恢復為純青色
+      //  純市電模式：恢復為純青色
       const gridColor = 'var(--grid-color)';
       pGridT.style.stroke = gridColor;
       pTEp.style.stroke = gridColor;
@@ -330,7 +330,7 @@ function setPowerSource(sourceType, bessState) {
   // 狀態 3：市電斷開，完全由電池撐場 (ATS = BATT)
   } else if (sourceType === 'BATT') {
     badge.className = 'power-source-badge source-batt';
-    icon.textContent = '🔋';
+    icon.textContent = '電池';
     text.textContent = 'ISLAND MODE (儲能獨立供電)';
 
     // 關閉市電幹線，啟動電池逆送動畫
@@ -341,7 +341,7 @@ function setPowerSource(sourceType, bessState) {
     pTL2.classList.add('flow-active'); 
     pTL3.classList.add('flow-active'); 
 
-    // 🌟 孤島模式：全部改為純黃色
+    // 孤島模式：全部改為純黃色
     const battColor = 'var(--batt-color)';
     pTL1.style.stroke = battColor;
     pTL2.style.stroke = battColor;

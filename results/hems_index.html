@@ -362,7 +362,7 @@ async function initHome(){
       const pricingText = pricing === 'two_stage' ? '兩段式電價' : '三段式電價';
       const outageText = currentScenario.outage ? `停電模擬` : '無停電模擬';
       document.getElementById('modeStatusText').textContent = `${pricingText} · ${outageText}`;
-      costSummary = currentScenario;  // 🆕 baseline_cost/pso_cost/savings 都在這裡面
+      costSummary = currentScenario;  //  baseline_cost/pso_cost/savings 都在這裡面
     } catch(e) { console.warn('抓不到 scenario，使用預設值'); }
 
     const res = await fetch(`/api/daily_summary?pricing=${pricing}`);
@@ -389,13 +389,13 @@ async function initHome(){
     let totalKwh = 0;
     let activeDeviceCount = 0;
 
-    // 🆕 色環自動配色，不手動指定固定色票
+    //  色環自動配色，不手動指定固定色票
     function getDeviceColor(index, total) {
       const hue = (index * 360 / total) % 360;
       return `hsl(${hue}, 70%, 60%)`;
     }
 
-    // 🆕 先把三個樓層的資料全部收集起來，依 id 分組（長格式 → 寬格式）
+    //  先把三個樓層的資料全部收集起來，依 id 分組（長格式 → 寬格式）
     const deviceGroups = {}; // { id: { name, powersByTime: {time: power_w} } }
 
     ['floor1', 'floor2', 'floor3'].forEach(floor => {
@@ -416,7 +416,7 @@ async function initHome(){
       const devDataKw = timeLabels.map(t => (group.powersByTime[t] || 0) / 1000); // W 轉 kW
 
       const sumKwh = devDataKw.reduce((a, b) => a + b, 0) * 0.25;
-      if (sumKwh > 0) activeDeviceCount++;   // 🆕 一整天都是 0 就不列入「啟用設備數」
+      if (sumKwh > 0) activeDeviceCount++;   //  一整天都是 0 就不列入「啟用設備數」
       totalKwh += sumKwh;
 
       loadDatasets.push({
@@ -428,7 +428,7 @@ async function initHome(){
       });
     });
 
-    // 🆕 線路損失，併入同一張堆疊圖，用固定的中性灰色跟設備顏色區隔開
+    //  線路損失，併入同一張堆疊圖，用固定的中性灰色跟設備顏色區隔開
     if (data.line_loss_kw && data.line_loss_kw.length > 0) {
       loadDatasets.push({
         label: '線路損失',
@@ -468,7 +468,7 @@ async function initHome(){
       })
     });
 
-// 🆕 樓層設備明細（可展開圖表）
+//  樓層設備明細（可展開圖表）
 const floorHues = { floor1: 215, floor2: 80, floor3: 32 }; // 藍/綠/橘 對應色相
 let floorDeviceGroups = {};
 let currentFloor = 'floor1';
@@ -485,7 +485,7 @@ function buildFloorDeviceGroups(floor) {
   return groups;
 }
 
-// 🆕 同樓層固定色相，靠明暗深淺分開每個設備，而不是全部混一種顏色
+// 同樓層固定色相，靠明暗深淺分開每個設備，而不是全部混一種顏色
 function getFloorDeviceColor(floor, index, total) {
   const hue = floorHues[floor];
   const lightness = 35 + (index * 40 / Math.max(total - 1, 1)); // 35%~75%
@@ -528,7 +528,7 @@ function renderDeviceAccordion(floor, groups) {
 
   ids.forEach((id, i) => {
     const group = groups[id];
-    const color = getFloorDeviceColor(floor, i, ids.length); // 🆕 跟堆疊圖裡同一個設備用同一個顏色
+    const color = getFloorDeviceColor(floor, i, ids.length); // 跟堆疊圖裡同一個設備用同一個顏色
     const dataKw = timeLabels.map(t => (group.powersByTime[t] || 0) / 1000);
     const kwh = dataKw.reduce((a, b) => a + b, 0) * 0.25;
 

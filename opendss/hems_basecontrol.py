@@ -20,7 +20,7 @@ PSO_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "04_optimized_pso")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "sample")
 
 #opendss執行程式
-
+#這個是負責跑basaline的獨立模式
 def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,battery_schedule_filename='battery_usage_two_stage_summer_weekday_15min.csv'):
     """
     執行全日模擬引擎
@@ -28,7 +28,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     :param outage_start_step: 停電開始步數 (0-95)
     :param outage_end_step: 停電結束步數 (0-95)
     """
-    # 決定輸出檔案的前綴名稱 全部強制成開頭大寫剩下小寫 prefix代表啟動模擬時傳入的模式參數 'baseline' 'pso'  'island'
+    # 決定輸出檔案的前綴名稱 capitalize將全部強制成開頭大寫剩下小寫 prefix代表啟動模擬時傳入的模式參數 'baseline' 'pso'  'island'
     prefix = mode.capitalize() 
 
     # 取得並建立電路
@@ -74,10 +74,10 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     pv_w_list = df_pv_brain['pv_kw'].tolist() #將時間跟pv發電量 儲存成 名字叫pv_w_list的陣列
 
 
-   # 從data\01_raw\LoadShapes_All_Nodes_15min.csv 讀取所有設備的 消耗功率（這份是設備控制頁面會改寫的那份）
+   # 從data\01_raw\LoadShapes_All_Nodes_15min.csv 讀取所有設備的 消耗功率（這份是設備控制頁面會改寫的那份）並轉換成一個 Pandas 的 DataFrame 物件（即一個虛擬的 Excel 表格），然後命名為 df_loads_brain。
     df_loads_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "LoadShapes_All_Nodes_15min.csv"))
     
-    #過濾欄位：排除 Time（時間）、Hour（小時）、Minute（分鐘）等時間標籤欄位，只留下純設備名稱的欄位。
+    #從表格 df_loads_brain 的所有欄位名稱中，把除了 'Time'、'Hour'、'Minute' 以外的所有「負載節點名稱」挑選出來，並打包成一個新的清單（List）儲存在 load_cols 變數中
     load_cols = [c for c in df_loads_brain.columns if c not in ['Time', 'Hour', 'Minute']]
   
     #將所有設備在相同時間點的消耗功率相加（sum(axis=1)），並轉換成 Python 列表（total_load_w_list），代表整個系統在各個時間點的總負載瓦數
@@ -85,7 +85,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
 
     #  ===== 新增這兩行：將 EP (緊急負載) 獨立計算出來 ===== 
     #ep_cols = [c for c in load_cols if 'ep_' in c.lower()]
-    ep_cols = [c for c in load_cols if c.lower().startswith('ep_')]#篩選ep欄位的資料
+    ep_cols = [c for c in load_cols if c.lower().startswith('ep_')]#篩選ep欄位的資料給下一行用
     ep_load_w_list = df_loads_brain[ep_cols].sum(axis=1).tolist()
     #  ==================================================
     try:
@@ -107,13 +107,15 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     if mode in ['pso', 'island']:#我在想island模式好像不需要了，因為網站沒有用到
         
         try:
-            df_pso = pd.read_csv(os.path.join(PSO_OUTPUT_DIR, battery_schedule_filename))#🆕 從 04_optimized_pso 閱讀pso的排程資料
+            df_pso = pd.read_csv(os.path.join(PSO_OUTPUT_DIR, battery_schedule_filename))# 從 04_optimized_pso 閱讀pso的排程資料
             #讀取 pso_battery_power.csv 檔案，並將其中的 Power_kW（電池功率千瓦值）欄位轉成列表，覆蓋掉原本的預設值
             pso_kw_list = df_pso['battery_power_kw'].tolist()
             print(f" 成功載入 PSO 電池排程！({battery_schedule_filename})")
         except FileNotFoundError:
             print("找不到 PSO 檔案，退回全天待機 (0 kW)。")
 
+    #檢查欄位是不是有 96筆資料，如果不夠就補0.0
+    #len()會計算並傳回 pv_w_list 這個清單（List）裡面，總共有多少個元素（即長度/個數）
     if len(pv_w_list) < total_steps:
         pv_w_list.extend([0.0] * (total_steps - len(pv_w_list)))
     if len(total_load_w_list) < total_steps:
@@ -202,6 +204,9 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
         bess_kw = 0.0
         bess_amp = 0.0
 
+        #SetActiveElement("Storage.Battery_Sys") 先把 OpenDSS 目前操作的目標鎖定成電池這個元件
+        #dss.CktElement.Powers() 回傳的是目前這個被鎖定的元件，每一個接點（terminal）、
+        #每一相（phase/conductor）的實功率(P)與虛功率(Q)，格式是一個攤平的陣列
         if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
             var_names = dss.CktElement.AllVariableNames()
             var_values = dss.CktElement.AllVariableValues()
@@ -329,7 +334,12 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
         else:
             actual_pv_kw = 0.0
 
-        # 4. 利用能量守恆定律反推真實負載：P_load = P_grid + P_pv + P_battery - P_loss
+        # 4. 利用能量守恆定律反推真實負載：P_load = P_grid + P_pv + P_battery - P_loss(負載耗電 = 電網供電 + 太陽能發電 + 電池放電 - 線路損耗)
+        #理論上電網供電+太陽能發電+電池放電=負載用電+線路損耗
+        #total_in_kw = -sys_power[0]      # 市電從電網流進來多少功率
+        #loss_kw = sys_losses[0] / 1000.0  # 電路本身（電線電阻）燒掉多少功率
+        #actual_pv_kw = abs(pv_powers[0])  # 太陽能實際發了多少電
+        #actual_kw = actual_powers[0] if actual_powers else 0.0  # 電池實際放了多少電
         actual_load_kw = total_in_kw + actual_pv_kw + actual_kw - loss_kw
 
         # 5. 比對「CSV理論預期負載」與「物理真實負載」的偏差

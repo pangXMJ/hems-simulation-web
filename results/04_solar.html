@@ -205,12 +205,12 @@ function initChart() {
 async function fetchLiveGridStatus() {
   try {
     const response = await fetch('/api/grid_status');
-    // 🆕 先確認 HTTP 狀態碼，避免 500 時後面的 .json() 產生更難懂的錯誤
+    //  先確認 HTTP 狀態碼，避免 500 時後面的 .json() 產生更難懂的錯誤
     if (!response.ok) throw new Error(`API 回應異常 (HTTP ${response.status})`);
     const data = await response.json();
 
     if (data.status === 'success') {
-      // 🆕 server.py 回傳的 timestamp 本身就是 "HH:MM"，沒有 "模擬時間 " 這個前綴，直接用即可
+      //  server.py 回傳的 timestamp 本身就是 "HH:MM"，沒有 "模擬時間 " 這個前綴，直接用即可
       const timeOnly = data.timestamp;
 
       document.querySelector('.crumb').innerHTML =

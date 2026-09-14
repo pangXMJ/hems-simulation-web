@@ -181,7 +181,7 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
 </footer>
 <script>
 /* ============================================================
-   🆕 修正版：不再向 /data/All_meter.csv 抓檔案（這個路徑本來就抓不到，
+   修正版：不再向 /data/All_meter.csv 抓檔案（這個路徑本來就抓不到，
    server.py 的靜態伺服器沒有掛載 data/sample 這個資料夾）。
    /api/grid_status 本身就已經回傳了這一步的六顆電表讀數（data.meters），
    直接拿來用、自己在記憶體裡累積歷史紀錄即可，不用另外讀檔案。

@@ -99,7 +99,7 @@ a{color:inherit;}
 .time-field{flex:1; min-width:160px;}
 .time-field label{display:block; font-family:'Space Mono'; font-size:10.5px; letter-spacing:1.5px; color:var(--faint); text-transform:uppercase; margin-bottom:8px;}
 
-/* 🆕 自訂時間選擇器的觸發按鈕（取代原生 input type=time，因為原生選單無法改色） */
+/*  自訂時間選擇器的觸發按鈕（取代原生 input type=time，因為原生選單無法改色） */
 .time-trigger{
   width:100%; background:var(--bg-2); border:1px solid var(--line); color:var(--white);
   font-family:'Space Mono'; font-size:16px; padding:10px 12px; border-radius:2px;
@@ -108,7 +108,7 @@ a{color:inherit;}
 .time-trigger:hover{ border-color:var(--accent-line); }
 .time-trigger.active{ border-color:var(--accent); }
 
-/* 🆕 共用的時間選擇浮動面板：黑底、綠色選中 */
+/*  共用的時間選擇浮動面板：黑底、綠色選中 */
 .ctp{
   display:none; position:absolute; z-index:500;
   background:#0a0a0b; border:1px solid var(--line); border-radius:4px;
@@ -157,7 +157,7 @@ a{color:inherit;}
 .device-time-row .time-field{min-width:0;}
 .device-time-row .time-trigger{font-size:13px; padding:8px 10px;}
 
-/* 🆕 多時段列 */
+/*  多時段列 */
 .range-row{ display:flex; gap:10px; align-items:flex-end; }
 .range-row .time-field{flex:1;}
 .remove-range-btn{
@@ -302,7 +302,7 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
 
 <footer>HEMS PROTOTYPE — SCENARIO CONTROL CENTER</footer>
 
-<!-- ===== 🆕 共用自訂時間選擇浮動面板 ===== -->
+<!-- ===== 共用自訂時間選擇浮動面板 ===== -->
 <div class="ctp" id="customTimePicker">
   <div class="ctp-cols">
     <div class="ctp-col" id="ctpHours"></div>
@@ -454,14 +454,14 @@ function toggleDevicePanel(idx){
   const isOpen = checkbox.checked;
   document.getElementById(`deviceTimeRow-${idx}`).classList.toggle('open', isOpen);
 
-  // 🆕 第一次打開這個設備的開關時，自動加一組預設時段，避免展開後是空的
+  //  第一次打開這個設備的開關時，自動加一組預設時段，避免展開後是空的
   const list = document.getElementById(`rangeList-${idx}`);
   if (isOpen && list.children.length === 0) {
     addTimeRange(idx);
   }
 }
 
-/* 🆕 新增一組時段列（開啟時間 + 關閉時間 + 刪除按鈕） */
+/*  新增一組時段列（開啟時間 + 關閉時間 + 刪除按鈕） */
 function addTimeRange(globalIdx){
   const list = document.getElementById(`rangeList-${globalIdx}`);
   const row = document.createElement('div');
@@ -480,7 +480,7 @@ function addTimeRange(globalIdx){
   list.appendChild(row);
 }
 
-/* 🆕 刪除一組時段列；如果刪到只剩最後一組，直接把開關關掉（維持「至少一段或整個關閉」的一致狀態） */
+/*  刪除一組時段列；如果刪到只剩最後一組，直接把開關關掉（維持「至少一段或整個關閉」的一致狀態） */
 function removeTimeRange(btn){
   const row = btn.closest('.range-row');
   const list = row.parentElement;
