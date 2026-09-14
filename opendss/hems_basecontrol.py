@@ -109,7 +109,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
         try:
             df_pso = pd.read_csv(os.path.join(PSO_OUTPUT_DIR, battery_schedule_filename))# 從 04_optimized_pso 閱讀pso的排程資料
             #讀取 pso_battery_power.csv 檔案，並將其中的 Power_kW（電池功率千瓦值）欄位轉成列表，覆蓋掉原本的預設值
-            pso_kw_list = df_pso['battery_power_kw'].tolist()
+            pso_kw_list = df_pso['battery_power_kw'].tolist()#閱讀第110(上兩行的df_pso)的csv檔案
             print(f" 成功載入 PSO 電池排程！({battery_schedule_filename})")
         except FileNotFoundError:
             print("找不到 PSO 檔案，退回全天待機 (0 kW)。")
@@ -130,8 +130,8 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
 
 
-    DUMP_LOAD_MAX_KW = 2.0
-    total_losses_kwh = 0.0
+    DUMP_LOAD_MAX_KW = 2.0 #洩壓負載最大吸收功率2kw
+    total_losses_kwh = 0.0 #全天累積線路損耗
 
 #注意是不是要有跨日模擬（時間重回 00:00）
     for step in range(total_steps):
@@ -162,56 +162,62 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
         )
 
 
+        #如果停電時間is_target_outage=true 表示模擬步長在停電中  以及 目前不是孤島模式 is_island_mode = False
         if is_target_outage and not is_island_mode:
             is_island_mode = True
             # 1. 真實物理切斷市電
-            dss.Text.Command("Edit Line.ATS_to_EP enabled=no")
+            dss.Text.Command("Edit Line.ATS_to_EP enabled=no") #在停電時將ats那條線截斷 
             
             # 2.修正：將 New 改為 Edit 打開電壓源，並實體切斷非緊急負載！
-            dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=yes")
-            dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=yes")
-            dss.Text.Command("Edit Line.home1F enabled=no")
+            dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=yes") #同時把模擬電壓源打開不然沒有辦法求解
+            dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=yes") 
+            dss.Text.Command("Edit Line.home1F enabled=no") #直接把通往1F,2F,3F的線路斷掉
             dss.Text.Command("Edit Line.home2F enabled=no")
             dss.Text.Command("Edit Line.home3F enabled=no")
             print(f" [{time_str}] 突發停電！ATS 切斷，啟動單相三線 Inverter，並切斷 L1~L3 非緊急負載。")
             
-        elif not is_target_outage and is_island_mode:
+        elif not is_target_outage and is_island_mode:  #代表 如果模擬步長is_target_outage=false不是目標停電狀態，且為孤島模式
             is_island_mode = False
             # 恢復市電，關閉孤島變流器，接回一般負載
-            dss.Text.Command("Edit Line.ATS_to_EP enabled=yes")
+            dss.Text.Command("Edit Line.ATS_to_EP enabled=yes") #不在停電的情況 將ats那條線復原
             dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
             dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
             dss.Text.Command("Edit Line.home1F enabled=yes")
             dss.Text.Command("Edit Line.home2F enabled=yes")
             dss.Text.Command("Edit Line.home3F enabled=yes")
             
-            dss.Text.Command("Edit Load.DumpLoad kW=0.0")
+            dss.Text.Command("Edit Load.DumpLoad kW=0.0")#清空「假負載本來還開著」的殘留狀態，避免市電恢復之後，這顆假負載元件繼續白白燒電、干擾潮流計算。
             print(f"🔌 [{time_str}] 市電恢復！結束孤島模式，重新併入大電網。")
-        if is_island_mode:
-            dss.Circuit.SetActiveElement("Storage.Battery_Sys")
-            soc_str_for_island_check = dss.Properties.Value("%stored")
-            soc_for_island_check = float(soc_str_for_island_check.replace('%', '').strip()) if soc_str_for_island_check else 0.0
 
-            if soc_for_island_check <= 1.0:
+        if is_island_mode:#如果是孤島模式 也可以說只要是孤島模式 
+            dss.Circuit.SetActiveElement("Storage.Battery_Sys")#設定要操控的電池元件
+            soc_str_for_island_check = dss.Properties.Value("%stored") #檢查孤島狀態的電池電量=當前剩於電量
+            soc_for_island_check = float(soc_str_for_island_check.replace('%', '').strip()) if soc_str_for_island_check else 0.0
+            #如果 soc_str_for_island_check 有值（不是 None 也不是空字串 ""），就執行左邊的資料轉換，把剩於電量 轉成能閱讀電池目前 SOC（%）的模式
+
+            if soc_for_island_check <= 1.0: #如果soc_for_island_check(電池的電量)小於1(1%)那就關掉電壓源的功能，變成直接讓整個電路失去功能
                 dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=no")
                 dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=no")
             else:
                 dss.Text.Command("Edit Vsource.BESS_GFM_L1 enabled=yes")
                 dss.Text.Command("Edit Vsource.BESS_GFM_L2 enabled=yes")    
 
-        #  初始化電池狀態變數，抓取狀態與計算淨功率
+        #初始化電池狀態變數，抓取狀態與計算淨功率
         soc = 0.0
         bess_kw = 0.0
         bess_amp = 0.0
 
+        #先讀電池目前的真實狀態，再算出這個時段的供需缺口，是每個時段送進電池決策邏輯之前的準備工作
+        #大於 0 的整數：代表成功找到並選定了該元件（通常代表該元件在電路中的索引編號 [1]）。等於 0：代表失敗（例如名稱打錯、或者電路中根本沒有這個元件 [1]）
         #SetActiveElement("Storage.Battery_Sys") 先把 OpenDSS 目前操作的目標鎖定成電池這個元件
         #dss.CktElement.Powers() 回傳的是目前這個被鎖定的元件，每一個接點（terminal）、
         #每一相（phase/conductor）的實功率(P)與虛功率(Q)，格式是一個攤平的陣列
+
         if dss.Circuit.SetActiveElement("Storage.Battery_Sys") != 0:
-            var_names = dss.CktElement.AllVariableNames()
-            var_values = dss.CktElement.AllVariableValues()
+            var_names = dss.CktElement.AllVariableNames() #根據上一行指定的元件 Storage.Battery_Sys抓出名稱 目前電池的設定內容包含電量狀態等
+            var_values = dss.CktElement.AllVariableValues() #根據上一行指定的元件 Storage.Battery_Sys抓出上一行名稱對應的數值 目前電池的設定內容包含電量狀態等
             
-            #  修正 1：恢復您原本最穩健的 SOC 讀取邏輯
+            #SOC 讀取邏輯用兩種方式 避免沒成功
             if "%stored" in var_names:
                 soc = float(var_values[var_names.index("%stored")])
             else:
@@ -219,21 +225,22 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
                 if soc_str:
                     soc = float(soc_str.replace('%', '').strip())
             
-            total_powers = dss.CktElement.TotalPowers()
-            if total_powers: 
-                bess_kw = -total_powers[0] 
+            total_powers = dss.CktElement.TotalPowers()#TotalPowers() 是元件所有相加總的實功率
+            if total_powers:  # if total_power有值，就是如果有成功抓到數據，將總kW變更正負號（轉為放電為正）並存入 bess_kw
+                bess_kw = -total_powers[0] #OpenDSS 原始慣例是「流進元件為正」，這裡刻意轉成「電池放電為正、充電為負」，跟 pso.py/battery_control_logic.py 全專案統一的符號慣例對齊，方便後面直接拿來比較、印出來看。
             
-            currents_mag = dss.CktElement.CurrentsMagAng()
+            currents_mag = dss.CktElement.CurrentsMagAng()#讀取電流
             if currents_mag: bess_amp = round(currents_mag[0], 2)
 
 
-        #  關鍵修復：停電時，大腦只看 EP 負載，避免誤判過載！
+        #  算供需缺口：停電時，大腦只看 EP 負載，避免誤判過載！
         pv_kw = pv_w_list[step] / 1000.0   
         if is_island_mode:
-            load_kw = ep_load_w_list[step] / 1000.0
+            load_kw = ep_load_w_list[step] / 1000.0    # 停電時只看關鍵負載 ep_load_w_list在第89行
         else:
-            load_kw = total_load_w_list[step] / 1000.0
-            
+            load_kw = total_load_w_list[step] / 1000.0 # 平常看全部負載 total_load_w_list在84行
+
+        #這裡的 pv_kw 從 pv_w_list出來的 /load_kw 從ep_load_w_list或是total_load_w_list 看有沒有停電 不是反推出來的，是直接查 CSV 清單裡這個時段「應該有」的數值，拿來算 net_kw（淨功率盈虧）    
         net_kw = pv_kw - load_kw
         if is_island_mode:
             print(f"🔎 [停電PV比對] {time_str} 真實電路pv_kw={round(pv_kw,3)} load_kw(EP)={round(load_kw,3)} net_kw={round(net_kw,3)}")
@@ -246,13 +253,17 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
         BATTERY_KWRATED = 5.0
 
 
-         #把 mode 換算成共用模組看得懂的 operation_mode（AUTO / PSO）
-         #is_island_mode 已經在前面算好了，直接傳進去即可
+        #把 mode 換算成共用模組看得懂的 operation_mode（AUTO / PSO）
+        #is_island_mode 已經在前面算好了，直接傳進去即可
         if mode == 'baseline':
             operation_mode = "AUTO"
         else:  # mode in ['pso', 'island']
             operation_mode = "PSO"
 
+        #這行是在依模式決定「這個時段要不要參考 PSO 排出來的電池功率」——
+        #pso_kw_list 是我們前面重構過、PSO 算好的那份 96 個時段的電池排程（來自 battery_usage_*.csv），
+        #current_pso_kw 就是取出「這一個時段」PSO 建議的電池功率值。
+        
         current_pso_kw = pso_kw_list[step] if mode in ['pso', 'island'] else 0.0
 
         dss.Text.Command("Edit Storage.Battery_Sys DispMode=External")    
@@ -346,9 +357,9 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
         expected_load_kw = (ep_load_w_list[step] / 1000.0) if is_island_mode else (total_load_w_list[step] / 1000.0)
         expected_load_kw += action["dump_load_kw"] if is_island_mode else 0.0
         
-        load_deviation = abs(actual_load_kw - expected_load_kw)
+        load_deviation = abs(actual_load_kw - expected_load_kw) #實際負載-預期負載
 
-        if load_deviation > 0.5: 
+        if load_deviation > 0.5:  #如果誤差超過0.5 大該是500W
             print(f" {time_str}    [負載壓降偏移] 理論應耗: {round(expected_load_kw,2)}kW | 物理實耗: {round(actual_load_kw,2)}kW | 偏差: {round(load_deviation,2)}kW")
         
 
