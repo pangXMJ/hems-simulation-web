@@ -6,6 +6,7 @@
 <title>HEMS — 06 配電盤總覽</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
 /* ==========================================
    核心設計變數
@@ -90,6 +91,9 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
 .data-label{ font-family: 'Space Mono'; font-size: 11px; color: var(--dim); }
 .data-value{ font-family: 'Bebas Neue'; font-size: 24px; color: var(--white); transition: 0.3s; }
 .data-unit{ font-size: 12px; color: var(--dim); font-family: 'Space Mono'; }
+.chart-wrap{ margin-top:20px; padding-top:16px; border-top:1px solid var(--line-soft); }
+.chart-title{ font-family:'Space Mono'; font-size:11px; color:var(--faint); letter-spacing:1px; margin-bottom:10px; text-transform:uppercase; }
+.chart-canvas-box{ position:relative; height:180px; }
 
 </style>
 </head>
@@ -219,7 +223,13 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
           <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="ep-a-l2">-- <span class="data-unit">A</span></span></div>
         </div>
       </div>
+      <div class="chart-wrap">       
+        <div class="chart-title">24H VOLTAGE / CURRENT TREND</div>
+        <div class="chart-canvas-box"><canvas id="ep-trend-chart"></canvas></div>
+      </div>
     </div>
+   
+      
 
     <!-- L1 負載 -->
     <div class="panel-card load">
@@ -236,7 +246,12 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
           <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l1-a-l2">-- <span class="data-unit">A</span></span></div>
         </div>
       </div>
+      <div class="chart-wrap">
+        <div class="chart-title">24H VOLTAGE / CURRENT TREND</div>
+        <div class="chart-canvas-box"><canvas id="l1-trend-chart"></canvas></div>
+      </div>
     </div>
+        
 
     <!-- L2 負載 -->
     <div class="panel-card load">
@@ -253,7 +268,12 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
           <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l2-a-l2">-- <span class="data-unit">A</span></span></div>
         </div>
       </div>
+      <div class="chart-wrap">
+        <div class="chart-title">24H VOLTAGE / CURRENT TREND</div>
+        <div class="chart-canvas-box"><canvas id="l2-trend-chart"></canvas></div>
+      </div>
     </div>
+   
 
     <!-- L3 負載 -->
     <div class="panel-card load">
@@ -270,11 +290,90 @@ body{ margin:0; background:var(--bg); color:var(--white); font-family:'Inter','N
           <div class="data-row"><span class="data-label">CURRENT</span><span class="data-value" id="l3-a-l2">-- <span class="data-unit">A</span></span></div>
         </div>
       </div>
+      <div class="chart-wrap">
+        <div class="chart-title">24H VOLTAGE / CURRENT TREND</div>
+        <div class="chart-canvas-box"><canvas id="l3-trend-chart"></canvas></div>
+      </div>
     </div>
-
   </div>
 </div>
 <script>
+
+
+
+const trendHistory = {
+  time: [],
+  ep: { v1: [], v2: [], a1: [], a2: [] },
+  l1:  { v1: [], v2: [], a1: [], a2: [] },
+  l2:  { v1: [], v2: [], a1: [], a2: [] },
+  l3:  { v1: [], v2: [], a1: [], a2: [] },
+};
+
+
+function makeTrendChart(canvasId, colorV, colorA) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'V-L1', data: [], borderColor: colorV, backgroundColor: 'transparent', yAxisID: 'yV', pointRadius: 0, borderWidth: 1.5, tension: 0.25 },
+        { label: 'V-L2', data: [], borderColor: colorV, backgroundColor: 'transparent', yAxisID: 'yV', pointRadius: 0, borderWidth: 1.5, borderDash: [4,3], tension: 0.25 },
+        { label: 'A-L1', data: [], borderColor: colorA, backgroundColor: 'transparent', yAxisID: 'yA', pointRadius: 0, borderWidth: 1.5, tension: 0.25 },
+        { label: 'A-L2', data: [], borderColor: colorA, backgroundColor: 'transparent', yAxisID: 'yA', pointRadius: 0, borderWidth: 1.5, borderDash: [4,3], tension: 0.25 },
+      ]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x:  { ticks: { color: '#8a8a90', maxTicksLimit: 8, font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        yV: { position: 'left',  ticks: { color: '#8a8a90', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'V', color: '#8a8a90' } },
+        yA: { position: 'right', ticks: { color: '#8a8a90', font: { size: 10 } }, grid: { display: false }, title: { display: true, text: 'A', color: '#8a8a90' } },
+      },
+      plugins: { legend: { labels: { color: '#8a8a90', font: { size: 10 } } } }
+    }
+  });
+}
+
+const trendCharts = {
+  ep: makeTrendChart('ep-trend-chart', '#ff9e4d', '#ffcf9e'),
+  l1: makeTrendChart('l1-trend-chart', '#b74dff', '#ddb0ff'),
+  l2: makeTrendChart('l2-trend-chart', '#b74dff', '#ddb0ff'),
+  l3: makeTrendChart('l3-trend-chart', '#b74dff', '#ddb0ff'),
+};
+
+// 把這一步的資料累積進歷史陣列，並更新四張圖
+function recordTrendPoint(timestamp, data) {
+  // 偵測「新的一天開始」：時間跳回 00:00 且已經有累積資料 → 清空重新累積
+  if (timestamp === '00:00' && trendHistory.time.length > 0) {
+    trendHistory.time = [];
+    ['ep', 'l1', 'l2', 'l3'].forEach(k => {
+      trendHistory[k].v1 = []; trendHistory[k].v2 = [];
+      trendHistory[k].a1 = []; trendHistory[k].a2 = [];
+    });
+  }
+
+  trendHistory.time.push(timestamp);
+  ['ep', 'l1', 'l2', 'l3'].forEach(k => {
+    trendHistory[k].v1.push(data[k].v1);
+    trendHistory[k].v2.push(data[k].v2);
+    trendHistory[k].a1.push(data[k].a1);
+    trendHistory[k].a2.push(data[k].a2);
+  });
+
+  ['ep', 'l1', 'l2', 'l3'].forEach(k => {
+    const chart = trendCharts[k];
+    chart.data.labels = trendHistory.time;
+    chart.data.datasets[0].data = trendHistory[k].v1;
+    chart.data.datasets[1].data = trendHistory[k].v2;
+    chart.data.datasets[2].data = trendHistory[k].a1;
+    chart.data.datasets[3].data = trendHistory[k].a2;
+    chart.update('none'); // 'none' = 不做動畫，效能較好
+  });
+}
 // ==========================================
 // 動態切換：純市電 / 混合併網 / 孤島模式
 // ==========================================
@@ -360,6 +459,7 @@ async function fetchSwitchboardData() {
     
     if (data.status === 'success') {
       document.getElementById('sysTime').textContent = `TIME: ${data.timestamp}`;
+      recordTrendPoint(data.timestamp, data);
       
       // 1. 驅動主幹線狀態 (傳入 ATS 與 電池狀態)
       setPowerSource(data.source, data.bess_state);
