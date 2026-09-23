@@ -240,12 +240,82 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
     <p class="tc">必選其一，切換後全站電費計算都會依此重新計算。</p>
   </div>
   <div class="segmented">
-    <input type="radio" name="pricing" id="pricing-two" value="two_stage" checked> #記錄電價的元素
+    <input type="radio" name="pricing" id="pricing-two" value="two_stage" checked> 
     <label for="pricing-two">兩段式</label>
     <input type="radio" name="pricing" id="pricing-three" value="three_stage">
     <label for="pricing-three">三段式</label>
+     <input type="radio" name="pricing" id="pricing-progressive" value="progressive">
+    <label for="pricing-progressive">累進電價</label>
   </div>
   <p class="segmented-note">TWO-STAGE / THREE-STAGE TIME-OF-USE TARIFF</p>
+</div>
+
+
+<!-- ===== 季節 ===== -->
+<div class="section">
+  <div class="section-head">
+    <div>
+      <div class="idx-num">01a — SEASON</div>
+      <h2>季節</h2>
+    </div>
+    <p class="tc">依台電夏月／非夏月費率計算，6月1日至9月30日為夏月。</p>
+  </div>
+  <div class="segmented">
+    <input type="radio" name="season" id="season-summer" value="summer" checked>
+    <label for="season-summer">夏季</label>
+    <input type="radio" name="season" id="season-nonsummer" value="non_summer">
+    <label for="season-nonsummer">非夏季</label>
+  </div>
+</div>
+
+<!-- ===== 平日／離峰日（僅二段式／三段式適用） ===== -->
+<div class="section" id="dayTypeSection">
+  <div class="section-head">
+    <div>
+      <div class="idx-num">01b — DAY TYPE</div>
+      <h2>平日／離峰日</h2>
+    </div>
+    <p class="tc">週六、週日及國定假日請選「離峰日」，僅二段式／三段式適用。</p>
+  </div>
+  <div class="segmented">
+    <input type="radio" name="day_type" id="day-weekday" value="weekday" checked>
+    <label for="day-weekday">平日</label>
+    <input type="radio" name="day_type" id="day-offpeak" value="off_peak_day">
+    <label for="day-offpeak">離峰日</label>
+  </div>
+</div>
+
+<div class="section" id="monthlyKwhSection" style="display:none;">
+  <div class="section-head">
+    <div>
+      <div class="idx-num">01d — MONTHLY USAGE</div>
+      <h2>本月累計度數</h2>
+    </div>
+    <p class="tc">今天開始之前，這個月已經累計使用的度數（kWh），用來判斷落在哪個累進級距。</p>
+  </div>
+  <input type="number" id="monthlyCumulativeKwh" min="0" step="1" value="0"
+         style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:2px;font-family:inherit;">
+</div>
+
+
+
+<!-- ===== 天氣 ===== -->
+<div class="section">
+  <div class="section-head">
+    <div>
+      <div class="idx-num">01c — WEATHER</div>
+      <h2>天氣</h2>
+    </div>
+    <p class="tc">模擬情境使用的太陽能發電曲線，依當天天氣狀況選擇。</p>
+  </div>
+  <div class="segmented">
+    <input type="radio" name="weather" id="weather-sunny" value="sunny" checked>
+    <label for="weather-sunny">晴天</label>
+    <input type="radio" name="weather" id="weather-cloudy" value="cloudy">
+    <label for="weather-cloudy">陰天</label>
+    <input type="radio" name="weather" id="weather-rainy" value="rainy">
+    <label for="weather-rainy">雨天</label>
+  </div>
 </div>
 
 <!-- ===== 停電模擬 ===== -->
@@ -643,6 +713,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+
+
+function updatePricingSections() {
+  const pricing = document.querySelector('input[name="pricing"]:checked').value;
+  const isProgressive = pricing === 'progressive';
+  document.getElementById('dayTypeSection').style.display = isProgressive ? 'none' : '';
+  document.getElementById('monthlyKwhSection').style.display = isProgressive ? '' : 'none';
+}
+
+// 頁面載入時先跑一次，確保初始狀態正確
+document.querySelectorAll('input[name="pricing"]').forEach(radio => {
+  radio.addEventListener('change', updatePricingSections);
+});
+updatePricingSections();
+
+
 /* hasConflict() 已被 checkOutageDeviceWarnings() 取代，需要區分 EP / 非EP 設備分別處理 */
 
 /* ============================================================
@@ -655,6 +741,10 @@ document.addEventListener('DOMContentLoaded', () => {
 async function confirmSwitch() {
   const config = {
     pricing: document.querySelector('input[name="pricing"]:checked').value,/*抓文件2段式電價還是3段式*/
+    season: document.querySelector('input[name="season"]:checked').value,
+    day_type: document.querySelector('input[name="day_type"]:checked').value,
+    weather: document.querySelector('input[name="weather"]:checked').value,
+    monthly_cumulative_kwh: Number(document.getElementById('monthlyCumulativeKwh').value) || 0,
     outage: document.getElementById('outageToggle').checked/*抓停電時間的設定值 或是null空值*/
       ? {
           start_time: document.getElementById('outageStart').dataset.value,

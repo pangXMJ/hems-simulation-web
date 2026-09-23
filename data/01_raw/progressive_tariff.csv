@@ -1,0 +1,13 @@
+tariff_type,season,tier_lower_kwh,tier_upper_kwh,price,unit
+progressive,summer,0,120,1.78,NTD/kWh
+progressive,summer,120,330,2.55,NTD/kWh
+progressive,summer,330,500,3.80,NTD/kWh
+progressive,summer,500,700,5.14,NTD/kWh
+progressive,summer,700,1000,6.44,NTD/kWh
+progressive,summer,1000,,8.86,NTD/kWh
+progressive,non_summer,0,120,1.78,NTD/kWh
+progressive,non_summer,120,330,2.26,NTD/kWh
+progressive,non_summer,330,500,3.13,NTD/kWh
+progressive,non_summer,500,700,4.24,NTD/kWh
+progressive,non_summer,700,1000,5.27,NTD/kWh
+progressive,non_summer,1000,,7.03,NTD/kWh

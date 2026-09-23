@@ -25,8 +25,16 @@ DATA_DIR = BASE_DIR / "data" / "01_raw"
 RESULT_DIR = BASE_DIR / "data" / "04_optimized_pso"
 
 LOAD_CSV_PATH = DATA_DIR / "LoadShapes_All_Nodes_15min.csv"
-PV_CSV_PATH = DATA_DIR / "pv_curve_15min.csv"
+PV_CSV_PATH = DATA_DIR / "pv_curve_15min.csv" # 保留當預設值（晴天），舊程式碼/CLI 沒指定天氣時還能用
+ # 指定天氣時用的路徑
+PV_CSV_PATHS = {
+    "sunny": DATA_DIR / "pv_curve_15min.csv",
+    "cloudy": DATA_DIR / "cloudy_day_pv_curve_15min.csv",
+    "rainy": DATA_DIR / "rain_day_pv_curve_15min.csv",
+}
+
 TARIFF_CSV_PATH = DATA_DIR / "electricity_tariffs_2tage_and_3tage_UTF-8.csv"
+PROGRESSIVE_TARIFF_CSV_PATH = DATA_DIR / "progressive_tariff.csv"
 
 
 # 功率單位注意事項：
@@ -128,7 +136,7 @@ LOAD_METADATA_COLUMNS = {  # 不納入設備功率加總的資料欄位
 BESS_CAPACITY_KWH = 20.0  # 電池額定容量（kWh）
 INITIAL_SOC = 0.50  # 電池初始荷電狀態
 SOC_MIN = 0.20  # 電池最低荷電狀態
-OUTAGE_SOC_MIN = 0.01 
+OUTAGE_SOC_MIN = 0.05#原本是0.01但因為考量最後要充回去50%的關係所以之好先設定5% 
 SOC_MAX = 0.90  # 電池最高荷電狀態
 TARGET_FINAL_SOC = 0.50  # 每日結束目標荷電狀態
 

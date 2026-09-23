@@ -100,7 +100,7 @@ def decide_battery_action(
             # 初始化不要用的資料
             result["dump_load_kw"] = 0.0
             result["pv_pmpp"] = None
-            ISLAND_SOC_FLOOR = 1.0 #ISLAND_SOC_FLOOR = 1.0 是宣告一個區域變數（local variable），只在這個函式呼叫的這一次執行中存在，不是存進 result 字典
+            ISLAND_SOC_FLOOR = 5.0 #ISLAND_SOC_FLOOR = 1.0 是宣告一個區域變數（local variable），只在這個函式呼叫的這一次執行中存在，不是存進 result 字典
             #ISLAND_SOC_FLOOR = 1.0 是電池的最低電量 如果變成1%就不會再放電了
 
 

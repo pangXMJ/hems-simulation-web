@@ -21,7 +21,8 @@ OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data", "sample")
 
 #opendss執行程式
 #這個是負責跑basaline的獨立模式
-def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,battery_schedule_filename='battery_usage_two_stage_summer_weekday_15min.csv'):
+def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,battery_schedule_filename='battery_usage_two_stage_summer_weekday_15min.csv', pv_csv_filename='pv_curve_15min.csv'):
+
     """
     執行全日模擬引擎
     :param mode: 'baseline' (未經最佳化), 'pso' (排程最佳化), 'island' (動態突發停電)
@@ -32,7 +33,7 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     prefix = mode.capitalize() 
 
     # 取得並建立電路
-    commands = build_circuit()#呼叫電路
+    commands = build_circuit(pv_csv_filename=pv_csv_filename)#呼叫電路
     #使用 for 迴圈，逐一取出 commands 列表中的每一行指令（cmd)-hems_circuit的52行  commands=[]的所有東西
     for cmd in commands:
         dss.Text.Command(cmd)#透過 opendssdirect（代稱為 dss）的文字介面，將指令字串送到 OpenDSS 模擬引擎中執行
@@ -70,7 +71,8 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
     }#這是給Panel_Common_Nodes_15m_History.csv產生總覽表用的
 
     # 讀取 PV 與 Load 為了後續作判斷用的
-    df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))# 從data\01_raw\pv_curve_15min.csv讀取時間跟pv發電量
+    #df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))# 從data\01_raw\pv_curve_15min.csv讀取時間跟pv發電量
+    df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, pv_csv_filename))#根據天氣選數據
     pv_w_list = df_pv_brain['pv_kw'].tolist() #將時間跟pv發電量 儲存成 名字叫pv_w_list的陣列
 
 

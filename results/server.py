@@ -111,7 +111,9 @@ DUMP_LOAD_MAX_KW = 2.0
 # ==========================================
 # 啟動時一次讀取全部 CSV 進記憶體（不是每次 API 呼叫都重讀）
 # ==========================================
-df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))
+current_pv_csv_filename = "pv_curve_15min.csv"
+#df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))
+df_pv_brain = pd.read_csv(os.path.join(RAW_DATA_DIR, current_pv_csv_filename))
 pv_w_list = df_pv_brain['pv_kw'].tolist()
 
 #    開機當下就先用 template x pattern 把 ACTIVE_LOAD_CSV seed 成正確版本，
@@ -135,7 +137,7 @@ except Exception as e:
 @app.on_event("startup")#server執行的那一刻，這行程式就會開始動
 def startup_event():
     """伺服器啟動時，載入並初始化 OpenDSS 實體電路"""
-    commands = build_circuit()
+    commands = build_circuit(pv_csv_filename=current_pv_csv_filename)#要傳參數進去
     for cmd in commands:
         dss.Text.Command(cmd)
 
@@ -171,15 +173,12 @@ def switch_scenario(config: dict):#config 的資料型態是字典
 
 @app.get("/api/daily_summary")
 def get_daily_summary(pricing: str = "two_stage"):
-    schedule_filename = (
-        "battery_usage_two_stage_summer_weekday_15min.csv" if pricing == "two_stage"
-        else "battery_usage_three_stage_summer_weekday_15min.csv"
-    )
+    schedule_filename = scenario_switch.BATTERY_SCHEDULE_FILENAMES[pricing]
     df_pso_history = pd.read_csv(os.path.join(SAMPLE_DIR, "Pso_History.csv"))
     df_pso_bess = pd.read_csv(os.path.join(SAMPLE_DIR, "Pso_bess_status.csv"))
     df_baseline_bess = pd.read_csv(os.path.join(SAMPLE_DIR, "Baseline_bess_status.csv"))
     df_ideal_schedule = pd.read_csv(os.path.join(PSO_OUTPUT_DIR, schedule_filename))
-    df_pv = pd.read_csv(os.path.join(RAW_DATA_DIR, "pv_curve_15min.csv"))
+    df_pv = pd.read_csv(os.path.join(RAW_DATA_DIR, current_pv_csv_filename))
     df_meter = pd.read_csv(os.path.join(SAMPLE_DIR, "Pso_All_meter.csv"))
 
     floor_devices = {}

@@ -159,11 +159,52 @@ def terminal_soc_request_kw(
         )
     return 0.0
 
-
 def _validate_series(*series):
     if any(len(values) != NUM_INTERVALS for values in series):
         lengths = [len(values) for values in series]  # 各輸入序列的實際長度
         raise ValueError(f"所有輸入必須各有 {NUM_INTERVALS} 筆，目前長度為 {lengths}")
+
+
+def progressive_price_lookup(cumulative_kwh_before, energy_kwh, tier_table):
+    """依累進電價級距表，計算一筆能量對應的電費。
+
+    cumulative_kwh_before：這筆能量發生之前，本月已累計的購電度數。
+    energy_kwh：本次要計價的能量（kWh），必須 >= 0。
+    tier_table：級距列表，每個元素是
+        {"lower": 下限kWh, "upper": 上限kWh或None(無上限), "price": 每度電價}，
+        必須依 lower 由小到大排序、且彼此不重疊不留縫隙。
+
+    如果這筆能量跨越了一個以上的級距門檻（例如從 119 度用到 122 度，
+    橫跨 120 度那條線），會自動拆成好幾段、各自套用該段所在級距的價格，
+    不會整筆都用同一個級距的價格去算。
+    """
+    remaining_kwh = energy_kwh
+    cursor_kwh = cumulative_kwh_before
+    cost = 0.0
+
+    for tier in tier_table:
+        if remaining_kwh <= 1e-12:
+            break
+
+        lower = tier["lower"]
+        upper = tier["upper"]  # None 代表這一級沒有上限
+
+        if upper is not None and cursor_kwh >= upper:
+            continue  # 目前累計值已經超過這一級的範圍，跳到下一級
+
+        # 這一級還能容納的度數（沒有上限就是剩下要算的全部）
+        tier_capacity_kwh = (
+            remaining_kwh if upper is None else max(upper - cursor_kwh, 0.0)
+        )
+        portion_kwh = min(remaining_kwh, tier_capacity_kwh)
+        if portion_kwh <= 0:
+            continue
+
+        cost += portion_kwh * tier["price"]
+        cursor_kwh += portion_kwh
+        remaining_kwh -= portion_kwh
+
+    return cost
 
 
 def hems_objective(
@@ -265,16 +306,137 @@ def hems_objective(
     return total_cost + penalty
 
 
+def hems_objective_progressive(
+    bess_schedule_kw,
+    critical_load_kw,
+    noncritical_load_kw,
+    pv_kw,
+    tier_table,
+    monthly_cumulative_kwh_start,
+    outage_start_index=OUTAGE_START_INDEX,
+    outage_end_index=OUTAGE_END_INDEX,
+    terminal_soc_control_start_index=TERMINAL_SOC_CONTROL_START_INDEX,
+):
+    """累進電價版本的目標函數。
+
+    跟 hems_objective() 的差異只在「怎麼把購電量換算成電費」：
+    這裡不是逐時段查固定電價，而是把每個時段的購電量累加到
+    monthly_cumulative_kwh_start 這個起點上，依當下累計到哪個級距，
+    用 progressive_price_lookup() 查對應價格。物理面的電池/SOC/停電/
+    終端 SOC 控制邏輯完全跟 hems_objective() 一樣，沒有改動。
+
+    tier_table：累進電價級距表，格式見 progressive_price_lookup()。
+    monthly_cumulative_kwh_start：本月、今天開始之前，已經累計用了幾度電。
+    """
+    _validate_series(
+        bess_schedule_kw,
+        critical_load_kw,
+        noncritical_load_kw,
+        pv_kw,
+    )
+
+    current_energy_kwh = INITIAL_SOC * BESS_CAPACITY_KWH  # 目前電池能量（kWh）
+    cumulative_grid_kwh = monthly_cumulative_kwh_start  # 本月累計購電度數
+    total_cost = 0.0  # 累計購電費用
+    penalty = 0.0  # 累計限制懲罰值
+
+    for t in range(NUM_INTERVALS):
+        requested_bess_kw = bess_schedule_kw[t]  # 排程要求的電池功率
+        outage = is_outage_interval(  # 目前是否停電
+            t, outage_start_index, outage_end_index
+        )
+
+        terminal_request_kw = terminal_soc_request_kw(  # 終端 SOC 控制要求功率
+            current_energy_kwh,
+            t,
+            terminal_soc_control_start_index,
+        )
+        if terminal_request_kw is not None:
+            requested_bess_kw = terminal_request_kw  # 改用終端 SOC 控制功率
+
+        load_demand_kw = (
+            critical_load_kw[t]
+            if outage
+            else critical_load_kw[t] + noncritical_load_kw[t]
+        )  # 目前需要供應的負載功率
+        requested_bess_kw = limit_bess_power_by_power_balance(  # 電力平衡限制後功率
+            requested_bess_kw,
+            load_demand_kw,
+            pv_kw[t],
+            outage,
+        )
+
+        actual_bess_kw = limit_bess_power_by_soc(  # SOC 限制後的實際電池功率
+            current_energy_kwh,
+            requested_bess_kw,
+            outage,
+        )
+        current_energy_kwh += battery_energy_change_kwh(  # 更新目前電池能量
+            actual_bess_kw
+        )
+
+        if outage:
+            # 停電時非關鍵負載卸載，電網功率固定為 0，這個時段不會有購電量。
+            power_balance_kw = (  # PV 與電池供應關鍵負載後的功率餘額
+                pv_kw[t]
+                + actual_bess_kw
+                - critical_load_kw[t]
+            )
+            shortage_kw = max(-power_balance_kw, 0.0)  # 關鍵負載缺電功率
+            curtailment_kw = max(power_balance_kw, 0.0)  # 多餘棄電功率
+            penalty += (  # 累加關鍵負載缺電懲罰
+                CRITICAL_SHORTAGE_PENALTY_WEIGHT
+                * shortage_kw
+                * DT
+            )
+        else:
+            net_grid_kw = (  # 扣除 PV 與電池後的電網淨功率
+                load_demand_kw - pv_kw[t] - actual_bess_kw
+            )
+            grid_import_kw = max(net_grid_kw, 0.0)  # 電網購電功率
+            curtailment_kw = max(-net_grid_kw, 0.0)  # 多餘棄電功率
+
+            grid_import_kwh_this_step = grid_import_kw * DT  # 這個時段的購電量
+            if grid_import_kwh_this_step > 0:
+                total_cost += progressive_price_lookup(  # 依累計度數查級距算錢
+                    cumulative_grid_kwh,
+                    grid_import_kwh_this_step,
+                    tier_table,
+                )
+                cumulative_grid_kwh += grid_import_kwh_this_step  # 更新累計購電度數
+
+        penalty += (  # 累加棄電懲罰
+            CURTAILMENT_PENALTY_WEIGHT * curtailment_kw * DT
+        )
+
+    final_soc = current_energy_kwh / BESS_CAPACITY_KWH  # 模擬結束時的 SOC
+    penalty += (  # 累加終端 SOC 偏差懲罰
+        FINAL_SOC_PENALTY_WEIGHT
+        * (TARGET_FINAL_SOC - final_soc) ** 2
+    )
+
+    return total_cost + penalty
+
+# 改成
 def run_pso(
     critical_load_kw,
     noncritical_load_kw,
     pv_kw,
-    price_per_kwh,
+    price_per_kwh=None,
+    tier_table=None,
+    monthly_cumulative_kwh_start=0.0,
     outage_start_index=OUTAGE_START_INDEX,
     outage_end_index=OUTAGE_END_INDEX,
     terminal_soc_control_start_index=TERMINAL_SOC_CONTROL_START_INDEX,
 ):
     """執行 96 維 PSO，回傳最佳排程、fitness 與逐代指標。
+
+    price_per_kwh：時間電價（二段式/三段式）用的 96 點電價陣列。
+    tier_table / monthly_cumulative_kwh_start：累進電價用，提供 tier_table
+        時會改用累進計費邏輯，並忽略 price_per_kwh；monthly_cumulative_kwh_start
+        是本月、今天開始之前已經累計用了幾度電。
+    price_per_kwh 與 tier_table 兩者必須且只能提供一種，不能同時給、也不能
+    都不給，否則會丟 ValueError，避免不小心算成錯的計費方式卻沒人發現。
 
     outage_start_index / outage_end_index：本次要最佳化的停電區間（半開區間，
     結束時段不包含）。預設沿用 config.py 的固定 18:00～22:00，呼叫端（例如
@@ -284,12 +446,30 @@ def run_pso(
     terminal_soc_control_start_index：終端 SOC 控制開始時段，必須不早於
     outage_end_index，否則電池可能沒有足夠時間從緊急下限回到目標 SOC。
     """
-    _validate_series(
-        critical_load_kw,
-        noncritical_load_kw,
-        pv_kw,
-        price_per_kwh,
-    )
+    if tier_table is not None and price_per_kwh is not None:
+        raise ValueError(
+            "price_per_kwh（時間電價）與 tier_table（累進電價）只能提供一種，"
+            "不能同時給，請確認呼叫端的電價方案判斷邏輯。"
+        )
+    if tier_table is None and price_per_kwh is None:
+        raise ValueError(
+            "必須提供 price_per_kwh（時間電價）或 tier_table（累進電價）其中一種。"
+        )
+    pricing_mode = "progressive" if tier_table is not None else "time_of_use"
+
+    if pricing_mode == "time_of_use":
+        _validate_series(
+            critical_load_kw,
+            noncritical_load_kw,
+            pv_kw,
+            price_per_kwh,
+        )
+    else:
+        _validate_series(
+            critical_load_kw,
+            noncritical_load_kw,
+            pv_kw,
+        )
 
     if outage_start_index > outage_end_index:
         raise ValueError(
@@ -318,8 +498,20 @@ def run_pso(
         P_BESS_MAX_KW,
         size=(NUM_PARTICLES, NUM_INTERVALS),
     )
-
+# 改成
     def fitness(position):
+        if pricing_mode == "progressive":
+            return hems_objective_progressive(
+                position,
+                critical_load_kw,
+                noncritical_load_kw,
+                pv_kw,
+                tier_table,
+                monthly_cumulative_kwh_start,
+                outage_start_index,
+                outage_end_index,
+                terminal_soc_control_start_index,
+            )
         return hems_objective(
             position,
             critical_load_kw,

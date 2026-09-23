@@ -232,6 +232,40 @@ def build_price_curve(
 
     return pd.Series(prices, name="price_per_kwh")
 
+#-----------------------------9/18新增新函數用來處理累進電價
+def build_tier_table(tariff_df, season=TARIFF_SEASON):
+    """把累進電價 CSV 篩選出對應季節的級距規則，轉成 pso.run_pso() 要的格式。
+
+    回傳一個 list，每個元素是 {"lower": 下限kWh, "upper": 上限kWh或None, "price": 每度電價}，
+    依 lower 由小到大排序。CSV 裡最後一級 tier_upper_kwh 留空，代表沒有上限，
+    這裡會轉成 Python 的 None。
+    """
+    required_columns = {"tariff_type", "season", "tier_lower_kwh", "tier_upper_kwh", "price"}
+    missing_columns = sorted(required_columns - set(tariff_df.columns))
+    if missing_columns:
+        raise ValueError(f"累進電價 CSV 缺少欄位：{missing_columns}")
+
+    rules = tariff_df.loc[
+        (tariff_df["tariff_type"] == "progressive")
+        & (tariff_df["season"] == season)
+    ].copy()
+    if rules.empty:
+        raise ValueError(f"找不到 progressive/{season} 的累進電價級距")
+
+    rules = _to_numeric_columns(rules, ["tier_lower_kwh", "price"], "累進電價 CSV")
+    rules = rules.sort_values("tier_lower_kwh").reset_index(drop=True)
+
+    tier_table = []
+    for _, row in rules.iterrows():
+        upper_raw = row["tier_upper_kwh"]
+        upper = None if pd.isna(upper_raw) else float(upper_raw)
+        tier_table.append({
+            "lower": float(row["tier_lower_kwh"]),
+            "upper": upper,
+            "price": float(row["price"]),
+        })
+    return tier_table
+
 
 def read_input_data(load_csv_path, pv_csv_path):
     load_data = read_load_data(load_csv_path)  # 負載資料
@@ -332,6 +366,8 @@ def run(
     output_dir,
     outage_start_time=OUTAGE_START_TIME,
     outage_end_time=OUTAGE_END_TIME,
+    season=TARIFF_SEASON,
+    day_type=TARIFF_DAY_TYPE,
 ):
     """兩種方案各跑一次 PSO，回傳並寫出兩份電池排程。
 
@@ -340,6 +376,11 @@ def run(
     如果外部（例如網站的停電控制頁面）指定了不同的停電時間，這裡會自動
     把「終端 SOC 控制開始時段」順延到停電結束之後，避免電池沒有足夠時間
     從緊急下限回到目標 SOC。
+
+    season / day_type：本次要用哪一組電價規則，預設沿用 config.py 的
+    "summer"/"weekday"。合法值請以 tariff_csv_path 這份 CSV 裡實際出現的
+    season/day_type 欄位值為準（例如本專案目前是 "summer"/"non_summer"、
+    "weekday"/"off_peak_day"），不是隨便字串都查得到規則。
     """
     outage_start_index = time_to_interval(outage_start_time)
     outage_end_index = time_to_interval(outage_end_time)
@@ -360,6 +401,8 @@ def run(
             tariff_df,
             tariff_input["Time"],
             tariff_type,
+            season=season,
+            day_type=day_type,
         )
 
         pso_result = run_pso(  # PSO 最佳化結果
@@ -395,7 +438,7 @@ def run(
             output_dir
             / (
                 f"pso_iteration_history_{tariff_type}_"
-                f"{TARIFF_SEASON}_{TARIFF_DAY_TYPE}_15min.csv"
+                f"{season}_{day_type}_15min.csv"
             )
         )
         iteration_history.to_csv(
@@ -445,6 +488,18 @@ def parse_args():
         default=OUTAGE_END_TIME,
         help="停電結束時間（不包含），格式 HH:MM，預設沿用 config.py 的設定",
     )
+    parser.add_argument(
+        "--season",
+        type=str,
+        default=TARIFF_SEASON,
+        help="電價季節，須符合電價 CSV 裡 season 欄位實際出現的值，預設沿用 config.py 的設定",
+    )
+    parser.add_argument(
+        "--day-type",
+        type=str,
+        default=TARIFF_DAY_TYPE,
+        help="平日／離峰日，須符合電價 CSV 裡 day_type 欄位實際出現的值，預設沿用 config.py 的設定",
+    )
     return parser.parse_args()
 
 
@@ -457,4 +512,6 @@ if __name__ == "__main__":
         args.output_dir,
         outage_start_time=args.outage_start,
         outage_end_time=args.outage_end,
+        season=args.season,
+        day_type=args.day_type,
     )

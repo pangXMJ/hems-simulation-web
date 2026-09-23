@@ -8,7 +8,7 @@ scenario_switch.py
   2. 呼叫 PSO，算出新的電池排程 CSV，輸出到共用的 data/04_optimized_pso。
   3. 呼叫離線驗證線（hems_basecontrol.run_simulation），跑一次完整 24 小時：
        a. 針對「PSO 優化過」的排程驗證有沒有過載
-       b. 🆕 針對「同一份負載資料、不套用 PSO」的 baseline 版本也跑一次，
+       b.  針對「同一份負載資料、不套用 PSO」的 baseline 版本也跑一次，
           算出對比用的「未優化總電價」
   4. 若 PSO 版本過載，重試最多 3 次（⚠️ 目前是「暫代版」，見下方說明）
   5. 驗證過關後，重置即時引擎（server.py 裡常駐的 OpenDSS），讓 01~06 頁面之後讀到新設定
@@ -36,6 +36,20 @@ scenario_switch.py
     合法的 outage_start_step/outage_end_step，任何 mode 都能進入孤島邏輯。
   - hems_basecontrol.run_simulation() 原本寫死讀取「兩段式」的 PSO 排程檔名，
     三段式電價情境會誤讀兩段式排程去驗證。已改成可傳入 battery_schedule_filename 參數。
+
+    07_control.html（打「500」進輸入框）
+  → JS: monthly_cumulative_kwh: Number(document.getElementById('monthlyCumulativeKwh').value)
+    → 送進 POST /api/switch_scenario 的 JSON：{"monthly_cumulative_kwh": 500, ...}
+      → server.py 的 switch_scenario() 收到，轉交給 scenario_switch.switch_scenario(config_json, ...)
+        → scenario_switch.py: monthly_cumulative_kwh = config_json.get("monthly_cumulative_kwh", 0.0)  # 這裡變成 500
+          → 傳給 run_pso_for_scenario(pricing, season, day_type, weather, monthly_cumulative_kwh, ...)
+            → 傳給 pso.run_pso(..., monthly_cumulative_kwh_start=monthly_cumulative_kwh, ...)
+              → 傳給 hems_objective_progressive(..., monthly_cumulative_kwh_start, ...)
+                → cumulative_grid_kwh = monthly_cumulative_kwh_start  # 500 在這裡變成「起點」
+                → 每個時段：
+                    if grid_import_kwh_this_step > 0:
+                        total_cost += progressive_price_lookup(cumulative_grid_kwh, grid_import_kwh_this_step, tier_table)
+                        cumulative_grid_kwh += grid_import_kwh_this_step   ← 每買一點電，這個數字就往上加
 """
 
 import importlib
@@ -62,7 +76,7 @@ OUTPUT_DIR = DATA_DIR / "sample"  #  離線驗證輸出的 _History.csv / _Warni
 #  PSO 的三支檔案（config.py / main.py / pso.py）放在獨立的 pso 資料夾，
 #    跟 scenario_switch.py 自己所在的 opendss 資料夾不同，
 #    要先把這個資料夾加進 sys.path，底下的 `import config`/`import main`/`import pso` 才找得到。
-PSO_CODE_DIR = PROJECT_ROOT / "pso"
+PSO_CODE_DIR = PROJECT_ROOT / "PSO"
 if str(PSO_CODE_DIR) not in sys.path:
     sys.path.append(str(PSO_CODE_DIR))
 
@@ -74,6 +88,13 @@ ACTIVE_LOAD_CSV = RAW_DATA_DIR / "LoadShapes_All_Nodes_15min.csv"             # 
 BATTERY_SCHEDULE_FILENAMES = {
     "two_stage": "battery_usage_two_stage_summer_weekday_15min.csv",
     "three_stage": "battery_usage_three_stage_summer_weekday_15min.csv",
+    "progressive": "battery_usage_progressive_summer_weekday_15min.csv",
+}
+
+WEATHER_PV_FILENAMES = {
+    "sunny": "pv_curve_15min.csv",
+    "cloudy": "cloudy_day_pv_curve_15min.csv",
+    "rainy": "rain_day_pv_curve_15min.csv",
 }
 
 MAX_RETRY = 3
@@ -206,10 +227,16 @@ def _patch_config_and_reload_pso():
     config.RESULT_DIR = PSO_OUTPUT_DIR
     config.LOAD_CSV_PATH = RAW_DATA_DIR / "LoadShapes_All_Nodes_15min.csv"
     config.PV_CSV_PATH = RAW_DATA_DIR / "pv_curve_15min.csv"
+    config.PV_CSV_PATHS = {
+        "sunny": RAW_DATA_DIR / "pv_curve_15min.csv",
+        "cloudy": RAW_DATA_DIR / "cloudy_day_pv_curve_15min.csv",
+        "rainy": RAW_DATA_DIR / "rain_day_pv_curve_15min.csv",
+    }
     config.TARIFF_CSV_PATH = RAW_DATA_DIR / "electricity_tariffs_2tage_and_3tage_UTF-8.csv"
     config.OUTPUT_CSV_PATHS = {
         "two_stage": PSO_OUTPUT_DIR / BATTERY_SCHEDULE_FILENAMES["two_stage"],
         "three_stage": PSO_OUTPUT_DIR / BATTERY_SCHEDULE_FILENAMES["three_stage"],
+        "progressive": PSO_OUTPUT_DIR / BATTERY_SCHEDULE_FILENAMES["progressive"],
     }
 
     return config, pso
@@ -232,9 +259,9 @@ def _patch_config_and_reload_pso():
     print(f"🔎 [停電區間檢查] OUTAGE_START_INDEX={pso.OUTAGE_START_INDEX}, OUTAGE_END_INDEX={pso.OUTAGE_END_INDEX}")
 """
 
-
-
-def run_pso_for_scenario(pricing: str, outage_start: str | None, outage_end: str | None, bess_max_kw_override: float | None = None):
+# 改成
+#def run_pso_for_scenario(pricing: str, season: str, day_type: str, weather: str, outage_start: str | None, outage_end: str | None, bess_max_kw_override: float | None = None):
+def run_pso_for_scenario(pricing: str, season: str, day_type: str, weather: str, monthly_cumulative_kwh: float, outage_start: str | None, outage_end: str | None, bess_max_kw_override: float | None = None):
     """
     回傳 (battery_result DataFrame, 輸出檔案路徑)。
     🆕 現在直接輸出到共用的 PSO_OUTPUT_DIR，不用再複製到別的地方，
@@ -265,26 +292,48 @@ def run_pso_for_scenario(pricing: str, outage_start: str | None, outage_end: str
 
     #importlib.reload(pso_main)  # main.py 內部也 import 了 config 的常數，一併重載
 
-    tariff_type = "two_stage" if pricing == "two_stage" else "three_stage"
-    input_data = pso_main.read_input_data(ACTIVE_LOAD_CSV, config.PV_CSV_PATH)
+    tariff_type = pricing
+    #input_data = pso_main.read_input_data(ACTIVE_LOAD_CSV, config.PV_CSV_PATH)
+    print(f"🔎 [天氣檢查] PSO 這次使用的 PV 檔案：{config.PV_CSV_PATHS[weather]}")
+    input_data = pso_main.read_input_data(ACTIVE_LOAD_CSV, config.PV_CSV_PATHS[weather])
     tariff_df = pso_main._read_tariff_csv(config.TARIFF_CSV_PATH)
 
     tariff_input = input_data.copy()
-    tariff_input["price_per_kwh"] = pso_main.build_price_curve(
-        tariff_df, tariff_input["Time"], tariff_type
-    )
+
+    if pricing == "progressive":
+        progressive_tariff_df = pso_main._read_csv(
+            config.PROGRESSIVE_TARIFF_CSV_PATH, "累進電價 CSV"
+        )
+        tier_table = pso_main.build_tier_table(progressive_tariff_df, season=season)
+    else:
+        tariff_input["price_per_kwh"] = pso_main.build_price_curve(
+            tariff_df, tariff_input["Time"], tariff_type,
+            season=season, day_type=day_type,
+        )
     print(f"🔎 [PSO輸入比對] 13:00~15:00 PV: {tariff_input[(tariff_input['Time']>='13:00')&(tariff_input['Time']<='14:45')]['pv_kw'].tolist()}")
     print(f"🔎 [PSO輸入比對] 13:00~15:00 critical_load_kw: {tariff_input[(tariff_input['Time']>='13:00')&(tariff_input['Time']<='14:45')]['critical_load_kw'].tolist()}")
 
-    pso_result = pso.run_pso(
-        tariff_input["critical_load_kw"].to_numpy(),
-        tariff_input["noncritical_load_kw"].to_numpy(),
-        tariff_input["pv_kw"].to_numpy(),
-        tariff_input["price_per_kwh"].to_numpy(),
-        outage_start_index=outage_start_index,
-        outage_end_index=outage_end_index,
-        terminal_soc_control_start_index=terminal_soc_control_start_index,
-    )
+    if pricing == "progressive":
+        pso_result = pso.run_pso(
+            tariff_input["critical_load_kw"].to_numpy(),
+            tariff_input["noncritical_load_kw"].to_numpy(),
+            tariff_input["pv_kw"].to_numpy(),
+            tier_table=tier_table,
+            monthly_cumulative_kwh_start=monthly_cumulative_kwh,
+            outage_start_index=outage_start_index,
+            outage_end_index=outage_end_index,
+            terminal_soc_control_start_index=terminal_soc_control_start_index,
+        )
+    else:
+        pso_result = pso.run_pso(
+            tariff_input["critical_load_kw"].to_numpy(),
+            tariff_input["noncritical_load_kw"].to_numpy(),
+            tariff_input["pv_kw"].to_numpy(),
+            tariff_input["price_per_kwh"].to_numpy(),
+            outage_start_index=outage_start_index,
+            outage_end_index=outage_end_index,
+            terminal_soc_control_start_index=terminal_soc_control_start_index,
+        )
 
     print(f"🎯 [PSO自評] PSO演算法自己算出來的理論總成本(電費+懲罰項): {pso_result['after_fitness']}")  # 🆕 除錯用，驗證完可刪
 
@@ -300,13 +349,21 @@ def run_pso_for_scenario(pricing: str, outage_start: str | None, outage_end: str
     output_path.parent.mkdir(parents=True, exist_ok=True)
     battery_result.to_csv(output_path, index=False, float_format="%.6f")
 
+    #存一份 PSO 收斂過程紀錄，跟 main.py 的 run() 輸出格式一致
+    iteration_history = pd.DataFrame(pso_result["iteration_history"])
+    iteration_output_path = (
+        output_path.parent
+        / f"pso_iteration_history_{tariff_type}_{season}_{day_type}_15min.csv"
+    )
+    iteration_history.to_csv(iteration_output_path, index=False, float_format="%.10f")
+
     return battery_result, output_path
 
 
 # ==========================================
 # 階段三：呼叫離線驗證線
 # ==========================================
-def run_offline_validation(mode: str, pricing: str,
+def run_offline_validation(mode: str, pricing: str, weather: str,
                             outage_start_step: int, outage_end_step: int):
     """
     呼叫 hems_basecontrol.run_simulation() 跑一次完整 24 小時。
@@ -324,13 +381,16 @@ def run_offline_validation(mode: str, pricing: str,
     """
     import hems_basecontrol
 
-    schedule_filename = BATTERY_SCHEDULE_FILENAMES["two_stage" if pricing == "two_stage" else "three_stage"]
+    schedule_filename = BATTERY_SCHEDULE_FILENAMES[pricing]
 
-    df_history, df_warning = hems_basecontrol.run_simulation(  #從這裡去觸發opendss的計算
+ #從這裡去觸發opendss的計算
+    print(f"🔎 [天氣檢查] 離線驗證這次使用的 PV 檔案：{WEATHER_PV_FILENAMES[weather]}")
+    df_history, df_warning = hems_basecontrol.run_simulation(
         mode=mode,
         outage_start_step=outage_start_step,
         outage_end_step=outage_end_step,
         battery_schedule_filename=schedule_filename,
+        pv_csv_filename=WEATHER_PV_FILENAMES[weather],
     )
 
     has_overload = not df_warning.empty
@@ -351,7 +411,7 @@ def run_offline_validation(mode: str, pricing: str,
 METER_COLUMN = "總電錶T_當前累積功率(kWh)"  # ⚠️ 請對照你實際 df_history 的欄位名稱，若不同要改這裡
 
 
-def compute_total_cost(df_history: pd.DataFrame, pricing: str) -> float:
+def compute_total_cost(df_history: pd.DataFrame, pricing: str, season: str, day_type: str, monthly_cumulative_kwh: float = 0.0) -> float:
     """
     用「總電錶T」這個電表的累積 kWh（df_history 每步都有記錄）算出全天總電費。
     價格曲線直接重用 PSO 隊友已經寫好的 build_price_curve()，不用另外重造輪子。
@@ -366,21 +426,41 @@ def compute_total_cost(df_history: pd.DataFrame, pricing: str) -> float:
             f"目前欄位有：{list(df_history.columns)[:20]} ..."
         )
 
-    tariff_df = pso_main._read_tariff_csv(config.TARIFF_CSV_PATH)
-    tariff_type = "two_stage" if pricing == "two_stage" else "three_stage"
-    price_series = pso_main.build_price_curve(tariff_df, df_history["Time"], tariff_type)
-
+# 改成
     cumulative_kwh = df_history[METER_COLUMN].to_numpy()
     # 第一步的用電量 = 累積值本身（假設從 0 開始）；之後每步 = 跟前一步的差值
     kwh_per_step = np.diff(cumulative_kwh, prepend=0.0)
     kwh_per_step = np.clip(kwh_per_step, 0, None)  # 避免电表重置或雜訊造成負值
+
+    if pricing == "progressive":
+        import pso
+
+        progressive_tariff_df = pso_main._read_csv(
+            config.PROGRESSIVE_TARIFF_CSV_PATH, "累進電價 CSV"
+        )
+        tier_table = pso_main.build_tier_table(progressive_tariff_df, season=season)
+
+        total_cost = 0.0
+        cumulative_grid_kwh = monthly_cumulative_kwh  # 從本月起點開始累加
+        for step_kwh in kwh_per_step:
+            if step_kwh > 0:
+                total_cost += pso.progressive_price_lookup(
+                    cumulative_grid_kwh, float(step_kwh), tier_table
+                )
+                cumulative_grid_kwh += step_kwh
+        return round(total_cost, 2)
+
+    tariff_df = pso_main._read_tariff_csv(config.TARIFF_CSV_PATH)
+    tariff_type = pricing
+    price_series = pso_main.build_price_curve(tariff_df, df_history["Time"], tariff_type,season=season, day_type=day_type,)
 
     total_cost = float(np.sum(kwh_per_step * price_series.to_numpy()))
     return round(total_cost, 2)
 
 SOC_COLUMN = "電池_SOC(%)"
 
-def compute_battery_asset_value(df_history: pd.DataFrame, pricing: str) -> float:
+# 改成
+def compute_battery_asset_value(df_history: pd.DataFrame, pricing: str, season: str, day_type: str, monthly_cumulative_kwh: float = 0.0) -> float:
     """
     把「這一天結束時，電池裡還剩多少電」折算成金錢價值。
     邏輯：剩餘電量的價值 = 剩餘 kWh × 這份電價表裡最便宜的離峰價格
@@ -389,28 +469,46 @@ def compute_battery_asset_value(df_history: pd.DataFrame, pricing: str) -> float
     """
     import config
     import main as pso_main
+# 改成
+    final_soc_percent = df_history[SOC_COLUMN].iloc[-1]
+    final_soc_kwh = (final_soc_percent / 100.0) * config.BESS_CAPACITY_KWH
+
+    if pricing == "progressive":
+        import pso
+
+        progressive_tariff_df = pso_main._read_csv(
+            config.PROGRESSIVE_TARIFF_CSV_PATH, "累進電價 CSV"
+        )
+        tier_table = pso_main.build_tier_table(progressive_tariff_df, season=season)
+
+        cumulative_kwh = df_history[METER_COLUMN].to_numpy()
+        kwh_per_step = np.diff(cumulative_kwh, prepend=0.0)
+        kwh_per_step = np.clip(kwh_per_step, 0, None)
+        cumulative_at_end_of_day = monthly_cumulative_kwh + float(kwh_per_step.sum())
+
+        asset_value = pso.progressive_price_lookup(
+            cumulative_at_end_of_day, final_soc_kwh, tier_table
+        )
+        return round(asset_value, 2)
 
     tariff_df = pso_main._read_tariff_csv(config.TARIFF_CSV_PATH)
-    tariff_type = "two_stage" if pricing == "two_stage" else "three_stage"
+    tariff_type = pricing
 
     rules = tariff_df.loc[
         (tariff_df["tariff_type"] == tariff_type)
         & (tariff_df["charge_type"] == "energy")
-        & (tariff_df["season"] == config.TARIFF_SEASON)
-        & (tariff_df["day_type"] == config.TARIFF_DAY_TYPE)
+        & (tariff_df["season"] == season)
+        & (tariff_df["day_type"] == day_type)
     ]
     cheapest_price = rules["price"].min()
 
-    final_soc_percent = df_history[SOC_COLUMN].iloc[-1]
-    final_soc_kwh = (final_soc_percent / 100.0) * config.BESS_CAPACITY_KWH
-
-    return round(final_soc_kwh * cheapest_price, 2)    
+    return round(final_soc_kwh * cheapest_price, 2)  
 
 
 # ==========================================
 # 階段四：重置即時引擎（讓 server.py 常駐的 OpenDSS 讀新設定）
 # ==========================================
-def reset_online_engine(server_module, pricing: str, outage: dict | None = None,outage_start_step: int = -1, outage_end_step: int = -1):
+def reset_online_engine(server_module, pricing: str, weather: str, outage: dict | None = None,outage_start_step: int = -1, outage_end_step: int = -1):
     """
     server_module：直接把 server.py 這個已載入的模組傳進來，
     這樣可以直接改它的全域變數，不用重啟整個 process。
@@ -418,10 +516,11 @@ def reset_online_engine(server_module, pricing: str, outage: dict | None = None,
     改用 server_module.RAW_DATA_DIR / server_module.PSO_OUTPUT_DIR
     （對應 server.py 裡新的路徑常數），不再是單一個 TARGET_DATA_DIR。
     """
-    schedule_filename = BATTERY_SCHEDULE_FILENAMES["two_stage" if pricing == "two_stage" else "three_stage"]
-
+    schedule_filename = BATTERY_SCHEDULE_FILENAMES[pricing]
+    pv_filename = WEATHER_PV_FILENAMES[weather]
+    server_module.current_pv_csv_filename = pv_filename
     server_module.df_pv_brain = pd.read_csv(server_module.os.path.join(
-        server_module.RAW_DATA_DIR, "pv_curve_15min.csv"
+        server_module.RAW_DATA_DIR, pv_filename
     ))
     server_module.pv_w_list = server_module.df_pv_brain["pv_kw"].tolist()
 
@@ -462,10 +561,16 @@ def switch_scenario(config_json: dict, server_module):#兩個參數config_json�
     回傳 dict，直接被 FastAPI 路由回傳給前端，包含 PSO / Baseline 兩邊的總電價可供主頁對比。
     """
     pricing = config_json["pricing"]
+     # 提早驗證，避免打錯字被靜默當成 three_stage 處理
+    if pricing not in ("two_stage", "three_stage", "progressive"): #限定字的內容 如果pricing這個變數的內容不在two_stage跟three_stage  若未來要加時間電價 要在這裡新增
+        raise ValueError(f"pricing 必須是 'two_stage' 或 'three_stage'或 'progressive'，收到的是：{pricing}")#有錯誤會顯示
+    
+    season = config_json["season"]
+    day_type = config_json["day_type"]
+    weather = config_json["weather"]
+    monthly_cumulative_kwh = config_json.get("monthly_cumulative_kwh", 0.0)
 
-    # 提早驗證，避免打錯字被靜默當成 three_stage 處理
-    if pricing not in ("two_stage", "three_stage"): #限定字的內容 如果pricing這個變數的內容不在two_stage跟three_stage  若未來要加時間電價 要在這裡新增
-        raise ValueError(f"pricing 必須是 'two_stage' 或 'three_stage'，收到的是：{pricing}")#有錯誤會顯示
+   
 
     outage = config_json.get("outage")#抓出 json裡面的 停電資訊
     device_schedules = config_json.get("device_schedules", [])#
@@ -495,11 +600,14 @@ def switch_scenario(config_json: dict, server_module):#兩個參數config_json�
     df_pso_history = None
     for attempt in range(MAX_RETRY + 1):
         print(f"🔁 [重試檢查] 第 {attempt} 次嘗試，目前 bess_override={bess_override}")
-        run_pso_for_scenario(pricing, outage_start, outage_end, bess_override)
+        #run_pso_for_scenario(pricing, season, day_type, outage_start, outage_end, bess_override)
+        run_pso_for_scenario(pricing, season, day_type, weather, monthly_cumulative_kwh, outage_start, outage_end, bess_override)
+        
 
         has_overload, df_warning, df_pso_history = run_offline_validation(
             mode="pso",
             pricing=pricing,
+            weather=weather,
             outage_start_step=outage_start_step,
             outage_end_step=outage_end_step,
         )
@@ -524,6 +632,7 @@ def switch_scenario(config_json: dict, server_module):#兩個參數config_json�
     _, df_baseline_warning, df_baseline_history = run_offline_validation(
         mode="baseline",
         pricing=pricing,
+        weather=weather,
         outage_start_step=outage_start_step,
         outage_end_step=outage_end_step,
     )
@@ -532,12 +641,13 @@ def switch_scenario(config_json: dict, server_module):#兩個參數config_json�
     #相鄰兩步相減,算出每一步實際買了多少電
     #對照電價表,依照每一步落在離峰還是尖峰,乘上對應價格
     #分別加總兩個模式消耗的總功率
-    pso_total_cost = compute_total_cost(df_pso_history, pricing) 
-    baseline_total_cost = compute_total_cost(df_baseline_history, pricing)
+    pso_total_cost = compute_total_cost(df_pso_history, pricing, season, day_type, monthly_cumulative_kwh) 
+    baseline_total_cost = compute_total_cost(df_baseline_history, pricing, season, day_type, monthly_cumulative_kwh)
+
 
     # 把「電池剩餘電量」折算成資產價值，從成本裡扣掉（存越多電，等於變相少花錢）
-    pso_battery_asset_value = compute_battery_asset_value(df_pso_history, pricing)
-    baseline_battery_asset_value = compute_battery_asset_value(df_baseline_history, pricing)
+    pso_battery_asset_value = compute_battery_asset_value(df_pso_history, pricing, season, day_type, monthly_cumulative_kwh)
+    baseline_battery_asset_value = compute_battery_asset_value(df_baseline_history, pricing, season, day_type, monthly_cumulative_kwh)
 
     pso_adjusted_cost = round(pso_total_cost - pso_battery_asset_value, 2)#pso_adjusted_cost是pso優化的電費比較後的數值
     baseline_adjusted_cost = round(baseline_total_cost - baseline_battery_asset_value, 2) #baseline_adjusted_cost是未優化的電費比較後的數值
@@ -545,7 +655,7 @@ def switch_scenario(config_json: dict, server_module):#兩個參數config_json�
     savings = round(baseline_adjusted_cost - pso_adjusted_cost, 2)
 
     # --- 階段四：重置即時引擎（只有 PSO 版本會被搬上網站即時展示）---
-    reset_online_engine(server_module, pricing, outage, outage_start_step, outage_end_step)
+    reset_online_engine(server_module, pricing, weather, outage, outage_start_step, outage_end_step)
 
     server_module.CURRENT_COST_SUMMARY = {
         "pso_cost": pso_adjusted_cost,

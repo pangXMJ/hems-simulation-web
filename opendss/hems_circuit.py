@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 
-def build_circuit():
+def build_circuit(pv_csv_filename="pv_curve_15min.csv"):
     
     """建立 15 分鐘解析度的電網實體電路，並回傳指令清單"""
     
@@ -13,7 +13,7 @@ def build_circuit():
     
     PROJECT_ROOT = r"C:\projects\hems-simulation-web"
     df_loads = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "01_raw", "LoadShapes_All_Nodes_15min.csv"))
-    df_pv = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "01_raw", "pv_curve_15min.csv"))
+    df_pv = pd.read_csv(os.path.join(PROJECT_ROOT, "data", "01_raw", pv_csv_filename))#根據名稱抓對應的太陽能天氣檔案
 
     loadshape_commands = []
 
