@@ -166,6 +166,7 @@ def switch_scenario(config: dict):#config 的資料型態是字典
     這是同步處理：前端打這支 API 會等到整個「寫CSV → PSO → 離線驗證(PSO版+baseline對比)
     → 重置即時引擎」流程跑完才收到回應，期間前端應顯示等待畫面。
     """
+    print("📥 收到的 config：", config)
     current_module = sys.modules[__name__]  # 把 server.py 自己當模組傳進去，讓 scenario_switch 改它的全域變數，因為 server.py 是一個伺服器
     result = scenario_switch.switch_scenario(config, current_module)
     return result
