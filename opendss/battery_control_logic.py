@@ -13,6 +13,13 @@
 BATTERY_KWRATED_DEFAULT = 5 #電池的預設 額定充放電功率上限 用在 decide_battery_action() 函式的參數列表裡第25行
 DUMP_LOAD_MAX_KW_DEFAULT = 2.0 #假負載（洩載電阻）的最大吸收功率上限，單位 kW
 
+
+BESS_CAPACITY_KWH = 20.0   # 同 config.BESS_CAPACITY_KWH
+BESS_ETA = 0.95            # 同 config 的充放電效率
+STEP_HOURS = 0.25          # 15 分鐘一步
+AUTO_SOC_MIN = 20.0        # 同 config.SOC_MIN（百分比）
+AUTO_SOC_MAX = 90.0        # 同 config.SOC_MAX（百分比）
+
 #函數宣告
 #Type Hints 型態提示 的寫法
 def decide_battery_action(
@@ -149,19 +156,25 @@ def decide_battery_action(
         result["dump_load_kw"] = 0.0
         result["pv_pmpp"] = None
 
-        if net_kw > 0.05:#發電過剩（net_kw > 0.05）→ 充電
-            if soc >= 99.9:#先判斷「是否過剩」，再判斷「電池滿了沒」
+        if net_kw > 0.05:
+            # 這一步最多還能充多少，才不會超過 90%
+            headroom_kwh = max(AUTO_SOC_MAX - soc, 0.0) / 100.0 * BESS_CAPACITY_KWH
+            max_charge_kw = headroom_kwh / (BESS_ETA * STEP_HOURS)
+            charge_kw = min(net_kw, battery_kwrated, max_charge_kw)
+            if charge_kw < 0.05:
                 result["battery_state"] = "IDLING"
             else:
-                charge_kw = min(net_kw, battery_kwrated)
                 result["battery_state"] = "CHARGING"
                 result["battery_command_pct"] = round((charge_kw / battery_kwrated) * 100, 2)
 
-        elif net_kw < -0.05:#發電不足（net_kw < -0.05）→ 放電
-            if soc <= 20.0:#併網模式下不需要把電池放到見底，因為就算電池不夠力，還可以跟電網買電補足負載，不會斷電。所以這裡保留 20% 當緩衝
+        elif net_kw < -0.05:
+            # 這一步最多還能放多少，才不會低於 20%
+            available_kwh = max(soc - AUTO_SOC_MIN, 0.0) / 100.0 * BESS_CAPACITY_KWH
+            max_discharge_kw = available_kwh * BESS_ETA / STEP_HOURS
+            discharge_kw = min(abs(net_kw), battery_kwrated, max_discharge_kw)
+            if discharge_kw < 0.05:
                 result["battery_state"] = "IDLING"
             else:
-                discharge_kw = min(abs(net_kw), battery_kwrated)
                 result["battery_state"] = "DISCHARGING"
                 result["battery_command_pct"] = round((discharge_kw / battery_kwrated) * 100, 2)
         else:

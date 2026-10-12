@@ -138,7 +138,7 @@ INITIAL_SOC = 0.50  # 電池初始荷電狀態
 SOC_MIN = 0.20  # 電池最低荷電狀態
 OUTAGE_SOC_MIN = 0.05#原本是0.01但因為考量最後要充回去50%的關係所以之好先設定5% 
 SOC_MAX = 0.90  # 電池最高荷電狀態
-TARGET_FINAL_SOC = 0.50  # 每日結束目標荷電狀態
+TARGET_FINAL_SOC = 0.20  # 每日結束目標荷電狀態
 
 P_BESS_MAX_KW = 5.0  # 電池最大充放電功率（kW）
 ETA_CHARGE = 0.95  # 電池充電效率
