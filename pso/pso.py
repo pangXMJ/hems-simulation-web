@@ -13,6 +13,7 @@ from config import (
     EARLY_STOP_REL_TOLERANCE,
     ETA_CHARGE,
     ETA_DISCHARGE,
+    FEED_IN_TARIFF,
     FINAL_SOC_PENALTY_WEIGHT,
     INERTIA_MAX,
     INERTIA_MIN,
@@ -31,6 +32,7 @@ from config import (
     SOC_MIN,
     TERMINAL_SOC_CONTROL_START_INDEX,
     TARGET_FINAL_SOC,
+    VELOCITY_MAX_KW,
 )
 
 
@@ -151,13 +153,15 @@ def terminal_soc_request_kw(
         return -energy_gap_kwh / (
             ETA_CHARGE * DT * remaining_intervals
         )
+    """    
     if energy_gap_kwh < 0:  # 電量過多，需要放電（功率為正）
         return (
             -energy_gap_kwh
             * ETA_DISCHARGE
             / (DT * remaining_intervals)
         )
-    return 0.0
+    """    
+    return None
 
 def _validate_series(*series):
     if any(len(values) != NUM_INTERVALS for values in series):
@@ -292,15 +296,17 @@ def hems_objective(
             total_cost += (  # 累加此時段購電費用
                 grid_import_kw * DT * price_per_kwh[t]
             )
-
+            total_cost -= (  # 扣除此時段賣電收入（PV 餘電送入電網 × 躉購費率）
+                curtailment_kw * DT * FEED_IN_TARIFF
+            )
         penalty += (  # 累加棄電懲罰
             CURTAILMENT_PENALTY_WEIGHT * curtailment_kw * DT
         )
 
     final_soc = current_energy_kwh / BESS_CAPACITY_KWH  # 模擬結束時的 SOC
-    penalty += (  # 累加終端 SOC 偏差懲罰
+    penalty += (  # 累加終端 SOC 偏差懲罰 原本高於或低於目標都會被罰，改成高於 40% 不罰，低於 40% 才罰
         FINAL_SOC_PENALTY_WEIGHT
-        * (TARGET_FINAL_SOC - final_soc) ** 2
+        * max(TARGET_FINAL_SOC - final_soc,0.0) ** 2
     )
 
     return total_cost + penalty
@@ -404,6 +410,9 @@ def hems_objective_progressive(
                     tier_table,
                 )
                 cumulative_grid_kwh += grid_import_kwh_this_step  # 更新累計購電度數
+            total_cost -= (  # 扣除賣電收入；賣電不影響累進級距的累計度數
+                curtailment_kw * DT * FEED_IN_TARIFF
+            )   
 
         penalty += (  # 累加棄電懲罰
             CURTAILMENT_PENALTY_WEIGHT * curtailment_kw * DT
@@ -412,7 +421,7 @@ def hems_objective_progressive(
     final_soc = current_energy_kwh / BESS_CAPACITY_KWH  # 模擬結束時的 SOC
     penalty += (  # 累加終端 SOC 偏差懲罰
         FINAL_SOC_PENALTY_WEIGHT
-        * (TARGET_FINAL_SOC - final_soc) ** 2
+        * max(TARGET_FINAL_SOC - final_soc, 0.0) ** 2
     )
 
     return total_cost + penalty
@@ -498,6 +507,30 @@ def run_pso(
         P_BESS_MAX_KW,
         size=(NUM_PARTICLES, NUM_INTERVALS),
     )
+    velocities = np.clip(velocities, -VELOCITY_MAX_KW, VELOCITY_MAX_KW)  # 初始速度也套用上限
+
+    # 規則起始粒子：前幾個粒子放入合理的排程，避免 PSO 早熟收斂在比簡單規則還差的解
+    deficit_kw = (  # 負載減 PV：正值 = 缺電，負值 = PV 有剩
+        np.asarray(critical_load_kw) + np.asarray(noncritical_load_kw) - np.asarray(pv_kw)
+    )
+    seed_schedules = [
+        np.where(deficit_kw > 0, upper_bound, lower_bound),  # 缺電就放電、PV 有剩就充電
+        np.zeros(NUM_INTERVALS),  # 電池完全不動
+    ]
+    if price_per_kwh is not None:  # 時間電價才有「貴的時段」可以判斷；累進電價跳過這條規則
+        prices = np.asarray(price_per_kwh)
+        seed_schedules.append(
+            np.where(
+                (deficit_kw > 0) & (prices > prices.min()), upper_bound,  # 只在較貴時段放電
+                np.where(deficit_kw < 0, lower_bound, 0.0),  # PV 有剩就充電
+            )
+        )
+    for k, schedule in enumerate(seed_schedules[:NUM_PARTICLES]):
+        positions[k] = schedule
+        velocities[k] = 0.0
+
+
+
 # 改成
     def fitness(position):
         if pricing_mode == "progressive":
@@ -575,7 +608,10 @@ def run_pso(
                 * r2
                 * (gbest_position - positions[particle])
             )
-            positions[particle] = np.clip(  # 更新目前粒子的位置
+            velocities[particle] = np.clip(  # 速度上限
+                velocities[particle], -VELOCITY_MAX_KW, VELOCITY_MAX_KW
+            )
+            positions[particle] = np.clip(  # 更新目前粒子的位置  # 更新目前粒子的位置
                 positions[particle] + velocities[particle],
                 lower_bound,
                 upper_bound,

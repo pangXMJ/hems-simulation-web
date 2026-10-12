@@ -457,21 +457,37 @@ def compute_total_cost(df_history: pd.DataFrame, pricing: str, season: str, day_
     total_cost = float(np.sum(kwh_per_step * price_series.to_numpy()))
     return round(total_cost, 2)
 
+def compute_export_revenue(df_history: pd.DataFrame) -> tuple[float, float]:
+    """
+    用「總電錶T」的累積 kWh 算出全天賣電度數與賣電收入。
+    電表 T 每 15 分鐘的變化量為負時，代表 PV 餘電送入電網（電池只放給自家負載，不會送電），
+    以躉購費率計價。回傳 (賣電度數, 賣電收入)。
+    """
+    import config
+
+    cumulative_kwh = df_history[METER_COLUMN].to_numpy()
+    kwh_per_step = np.diff(cumulative_kwh, prepend=0.0)
+    export_kwh = float(np.clip(-kwh_per_step, 0, None).sum())  # 只取負值（送電）的部分
+    return round(export_kwh, 3), round(export_kwh * config.FEED_IN_TARIFF, 2)
+
 SOC_COLUMN = "電池_SOC(%)"
 
 # 改成
 def compute_battery_asset_value(df_history: pd.DataFrame, pricing: str, season: str, day_type: str, monthly_cumulative_kwh: float = 0.0) -> float:
     """
-    把「這一天結束時，電池裡還剩多少電」折算成金錢價值。
-    邏輯：剩餘電量的價值 = 剩餘 kWh × 這份電價表裡最便宜的離峰價格
-    （因為正常情況下，要把電池充回這些電量，本來就會挑最便宜的時段充，
-    所以「省下的錢」應該用離峰價格去估算，這樣比較保守、不會高估）
+    把「這一天結束時，電池電量跟起點相比的變化」折算成金錢價值。
+    邏輯：價值 =（結束電量 − 起始電量）× 這份電價表裡最便宜的離峰價格
+    正值：比起點多存的電，視為隔天可少買的電（從電費扣掉）
+    負值：比起點少的電，隔天要用離峰電價買回來（加到電費上）
     """
     import config
     import main as pso_main
 # 改成
     final_soc_percent = df_history[SOC_COLUMN].iloc[-1]
     final_soc_kwh = (final_soc_percent / 100.0) * config.BESS_CAPACITY_KWH
+    initial_soc_kwh = config.INITIAL_SOC * config.BESS_CAPACITY_KWH
+    # 只計算「跟起點相比」的變化：正 = 比起點多存（加分），負 = 比起點少（隔天要買回來，扣分）
+    delta_kwh = final_soc_kwh - initial_soc_kwh
 
     if pricing == "progressive":
         import pso
@@ -486,9 +502,11 @@ def compute_battery_asset_value(df_history: pd.DataFrame, pricing: str, season: 
         kwh_per_step = np.clip(kwh_per_step, 0, None)
         cumulative_at_end_of_day = monthly_cumulative_kwh + float(kwh_per_step.sum())
 
-        asset_value = pso.progressive_price_lookup(
-            cumulative_at_end_of_day, final_soc_kwh, tier_table
+        # progressive_price_lookup 只接受正數，先用絕對值查價，再依正負號決定加分或扣分
+        value = pso.progressive_price_lookup(
+            cumulative_at_end_of_day, abs(delta_kwh), tier_table
         )
+        asset_value = value if delta_kwh >= 0 else -value
         return round(asset_value, 2)
 
     tariff_df = pso_main._read_tariff_csv(config.TARIFF_CSV_PATH)
@@ -502,7 +520,7 @@ def compute_battery_asset_value(df_history: pd.DataFrame, pricing: str, season: 
     ]
     cheapest_price = rules["price"].min()
 
-    return round(final_soc_kwh * cheapest_price, 2)  
+    return round(delta_kwh * cheapest_price, 2)  # 正：多存的電的價值；負：少掉的電的補電成本  
 
 
 # ==========================================
@@ -649,8 +667,13 @@ def switch_scenario(config_json: dict, server_module):#兩個參數config_json�
     pso_battery_asset_value = compute_battery_asset_value(df_pso_history, pricing, season, day_type, monthly_cumulative_kwh)
     baseline_battery_asset_value = compute_battery_asset_value(df_baseline_history, pricing, season, day_type, monthly_cumulative_kwh)
 
-    pso_adjusted_cost = round(pso_total_cost - pso_battery_asset_value, 2)#pso_adjusted_cost是pso優化的電費比較後的數值
-    baseline_adjusted_cost = round(baseline_total_cost - baseline_battery_asset_value, 2) #baseline_adjusted_cost是未優化的電費比較後的數值
+    # 賣電收入（PV 餘電 × 躉購費率）
+    pso_export_kwh, pso_export_revenue = compute_export_revenue(df_pso_history)
+    baseline_export_kwh, baseline_export_revenue = compute_export_revenue(df_baseline_history)
+
+    # 淨電費 = 買電費 − 賣電收入 − 電池電量變化價值
+    pso_adjusted_cost = round(pso_total_cost - pso_export_revenue - pso_battery_asset_value, 2)
+    baseline_adjusted_cost = round(baseline_total_cost - baseline_export_revenue - baseline_battery_asset_value, 2)
 
     savings = round(baseline_adjusted_cost - pso_adjusted_cost, 2)
 
@@ -672,6 +695,10 @@ def switch_scenario(config_json: dict, server_module):#兩個參數config_json�
         "baseline_battery_asset_value": baseline_battery_asset_value,
         "pso_adjusted_cost": pso_adjusted_cost,          # 扣掉電池餘電價值後的「真實成本」
         "baseline_adjusted_cost": baseline_adjusted_cost,
-        "savings": savings,                              # 現在是用 adjusted_cost 算出來的
+         "savings": savings,                              # 現在是用 adjusted_cost 算出來的
+        "pso_export_kwh": pso_export_kwh,                # 賣電度數
+        "pso_export_revenue": pso_export_revenue,        # 賣電收入
+        "baseline_export_kwh": baseline_export_kwh,
+        "baseline_export_revenue": baseline_export_revenue,
         "baseline_had_overload": not df_baseline_warning.empty,
     }#這裡面的東西會被送到 07網站去顯示 730行

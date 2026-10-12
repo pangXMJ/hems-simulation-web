@@ -351,10 +351,14 @@ def simulate_best_schedule(
         )
 
     result = pd.DataFrame(records)  # 最終電池使用結果
-    final_soc = result["soc_percent"].iloc[-1] / 100.0  # 最後時段 SOC
-    if abs(final_soc - TARGET_FINAL_SOC) > 1e-8:
-        raise RuntimeError(
-            f"終端 SOC 控制未達目標：{final_soc * 100:.8f}%"
+    final_soc = result["soc_percent"].iloc[-1] / 100.0  
+    # 最後時段 SOC
+    # 終端 SOC 只要求「不低於目標」；高於目標的剩電由剩電價值反映
+    # 低於目標通常是停電太晚結束、或過載重試調降了電池功率，來不及充回 → 只警告不中斷
+    if final_soc < TARGET_FINAL_SOC - 1e-8:
+        print(
+            f"⚠️ [終端 SOC] 最終 SOC {final_soc * 100:.2f}% 低於目標 "
+            f"{TARGET_FINAL_SOC * 100:.0f}%，差額將由剩電價值反映在電費比較中"
         )
     return result
 

@@ -9,7 +9,25 @@ import pandas as pd
 
 
 """
-運行流程
+重要參數
+opendss的起始電量 hems_circuit.py 的battery設定
+pso電池起點 config.py的 INITIAL_SOC 
+pso電池終點 config.py的 TARGET_FINAL_SOC
+pso的函數計算終點條件 pso.py 的def terminal_soc_request_kw
+pso懲罰項 當低於多少會被罰
+在pso.py的303行
+penalty += (  # 累加終端 SOC 偏差懲罰 原本高於或低於目標都會被罰，改成高於 40% 不罰，低於 40% 才罰
+    FINAL_SOC_PENALTY_WEIGHT
+        * max(TARGET_FINAL_SOC - final_soc, 0) ** 2
+    )
+main.py的警告位置
+終端 SOC 控制未達目標在 simulate_best_schedule()
+
+config.py新增速度上限參數
+EARLY_STOP_REL_TOLERANCE（在「6. PSO 參數」區塊的最後一行）
+
+
+
 打開伺服器的瞬間
 python server.py
   → uvicorn.run(...)

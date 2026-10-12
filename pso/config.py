@@ -134,11 +134,11 @@ LOAD_METADATA_COLUMNS = {  # 不納入設備功率加總的資料欄位
 # 4. 電池參數
 # ============================================================
 BESS_CAPACITY_KWH = 20.0  # 電池額定容量（kWh）
-INITIAL_SOC = 0.50  # 電池初始荷電狀態
+INITIAL_SOC = 0.40  # 電池初始荷電狀態
 SOC_MIN = 0.20  # 電池最低荷電狀態
 OUTAGE_SOC_MIN = 0.05#原本是0.01但因為考量最後要充回去50%的關係所以之好先設定5% 
 SOC_MAX = 0.90  # 電池最高荷電狀態
-TARGET_FINAL_SOC = 0.20  # 每日結束目標荷電狀態
+TARGET_FINAL_SOC = 0.40  # 每日結束目標荷電狀態
 
 P_BESS_MAX_KW = 5.0  # 電池最大充放電功率（kW）
 ETA_CHARGE = 0.95  # 電池充電效率
@@ -147,6 +147,8 @@ ETA_DISCHARGE = 0.95  # 電池放電效率
 # 正常供電時允許電池由電網充電；停電時只能使用剩餘 PV 充電。
 ALLOW_GRID_CHARGING = True  # 是否允許由電網替電池充電
 
+# 太陽光電餘電躉售費率（元/度）：115 年度屋頂型 1~10 瓩（行政院公報 2026-01-02 附表三）
+FEED_IN_TARIFF = 5.6279
 # 電池功率符號：
 # > 0：Discharging（放電）
 # < 0：Charging（充電）
@@ -174,3 +176,4 @@ SOCIAL_COEFFICIENT = 1.50  # 全域最佳學習係數
 MIN_ITERATIONS = 100
 EARLY_STOP_PATIENCE = 50
 EARLY_STOP_REL_TOLERANCE = 1e-5
+VELOCITY_MAX_KW = 1.0  # 粒子速度上限（kW/代），避免粒子一下衝到 ±P_BESS_MAX_KW 邊界卡住
