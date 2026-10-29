@@ -1,0 +1,54 @@
+📥 收到的 config： {'pricing': 'progressive', 'season': 'summer', 'day_type': 'weekday', 'weather': 'sunny', 'monthly_cumulative_kwh': 400, 'outage': {'start_time': '18:00', 'end_time': '21:00'}, 'device_schedules': []}
+🔁 [重試檢查] 第 0 次嘗試，目前 bess_override=None
+🔎 [天氣檢查] PSO 這次使用的 PV 檔案：C:\projects\hems-simulation-web\data\01_raw\pv_curve_15min.csv
+🔎 [PSO輸入比對] 13:00~15:00 PV: [3.61135, 3.57511, 3.52632, 3.465, 3.4720400000000002, 3.4094800000000003, 3.26872, 3.0497600000000005]
+🔎 [PSO輸入比對] 13:00~15:00 critical_load_kw: [0.10398015000000001, 0.104320565, 0.105352634, 0.10483838199999998, 0.105803373, 0.10691419400000002, 0.10865781599999999, 0.11004641800000001]
+🎯 [PSO自評] PSO演算法自己算出來的理論總成本(電費+懲罰項): -122.68201894622271
+🔎 [天氣檢查] 離線驗證這次使用的 PV 檔案：pv_curve_15min.csv
+🔍 [除錯] 目前實際使用的電池指令是: New Storage.Battery_Sys phases=1 bus1=Inv_AC.1.2 kV=0.22 kVA=6.0 kWrated=5.0 kWhrated=20.0 pf=1.0 %stored=40 %reserve=0 %IdlingKw=0 %EffCharge=95 %EffDischarge=95 DispMode=External
+ 基準電路建置完成！開始進行 15 分鐘步進模擬 (模式: PSO)...
+
+
+{status: "success", message: "切換成功", pso_total_cost: 33.47, baseline_total_cost: 3.85,…}
+baseline_adjusted_cost
+: 
+-69.16
+baseline_battery_asset_value
+: 
+0
+baseline_export_kwh
+: 
+12.973
+baseline_export_revenue
+: 
+73.01
+baseline_had_overload
+: 
+false
+baseline_total_cost
+: 
+3.85
+message
+: 
+"切換成功"
+pso_adjusted_cost
+: 
+-122.25
+pso_battery_asset_value
+: 
+0
+pso_export_kwh
+: 
+27.669
+pso_export_revenue
+: 
+155.72
+pso_total_cost
+: 
+33.47
+savings
+: 
+53.09
+status
+: 
+"success"

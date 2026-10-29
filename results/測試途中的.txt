@@ -1,3 +1,30 @@
+跑
+curl -X POST http://127.0.0.1:8000/api/switch_scenario -H "Content-Type: application/json" -d "{\"pricing\": \"two_stage\", \"outage\": null, \"device_schedules\": []}"
+
+要花16秒
+
+回傳{"status":"success","message":"切換成功","pso_total_cost":263.4,"baseline_total_cost":232.97,"savings":-30.43,"baseline_had_overload":false}
+
+
+跑
+curl -X POST http://127.0.0.1:8000/api/switch_scenario -H "Content-Type: application/json" -d "{\"pricing\": \"two_stage\", \"outage\": {\"start_time\": \"13:00\", \"end_time\": \"15:00\"}, \"device_schedules\": []}"
+
+要花19秒
+
+回傳{"status":"success","message":"切換成功","pso_total_cost":268.76,"baseline_total_cost":206.64,"savings":-62.12,"baseline_had_overload":false}
+
+
+跑
+curl -X POST http://127.0.0.1:8000/api/switch_scenario -H "Content-Type: application/json" -d "{\"pricing\": \"two_stage\", \"outage\": null, \"device_schedules\": [{\"column\": \"l1_airc_abn\", \"start_time\": \"14:00\", \"end_time\": \"16:00\", \"on_power_kw\": 1.2}]}"
+
+要花15秒
+回傳{"status":"success","message":"切換成功","pso_total_cost":259.35,"baseline_total_cost":228.41,"savings":-30.94,"baseline_had_overload":false}
+
+
+
+
+
+
 INFO:     127.0.0.1:56343 - "GET /api/grid_status?web_island_mode_active=false HTTP/1.1" 200 OK
 ✅ 基準電路建置完成！開始進行 15 分鐘步進模擬 (模式: PSO)...
 

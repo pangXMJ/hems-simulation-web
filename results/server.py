@@ -10,6 +10,8 @@ import pandas as pd
 
 """
 重要參數
+config的OUTAGE_SOC_MIN = 0.1#停電的電池下限跟 battery_control_logic的ISLAND_SOC_FLOOR = 10.0 要一起改才有用
+
 opendss的起始電量 hems_circuit.py 的battery設定
 pso電池起點 config.py的 INITIAL_SOC 
 pso電池終點 config.py的 TARGET_FINAL_SOC
@@ -495,7 +497,9 @@ def get_grid_status(web_island_mode_active: bool = False, operation_mode: str = 
             rated_v = float(dss.Properties.Value("kV")) * 1000.0
 
             if status_code == 1 and amps > 0:
-                real_v = watts / amps
+                total_powers = dss.CktElement.TotalPowers()          # [P(kW), Q(kvar)]
+                kva = (total_powers[0]**2 + total_powers[1]**2) ** 0.5 if total_powers else 0.0
+                real_v = kva * 1000.0 / amps
             else:
                 voltages = dss.CktElement.VoltagesMagAng()
                 if rated_v >= 200 and len(voltages) >= 3:

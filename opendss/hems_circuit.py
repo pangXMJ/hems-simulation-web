@@ -170,69 +170,69 @@ def build_circuit(pv_csv_filename="pv_curve_15min.csv"):
 
         # 1F 照明 線路 1，創造一條線叫 EP_Br1，指定從EP panel  拉線過來接，源頭接在 EP_Panel ，尾端幫 負載做一個 做一個接口 叫做 EP_a
         "New Line.EP_Br1 Bus1=EP_Panel.1.0 Bus2=EP_a.1.0 LineCode=wire_2mm2_1p Length=0.008 units=km",#盤體拉到天花板並串聯 8公尺
-        "New Load.EP_1F_Lighting1_AN phases=1 Bus1=EP_a.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_1f_lighting1_an",
+        "New Load.EP_1F_Lighting1_AN phases=1 Bus1=EP_a.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_1f_lighting1_an",
 
         # 1F 照明 線路 2
         "New Line.EP_Br2 Bus1=EP_Panel.2.0 Bus2=EP_b.2.0 LineCode=wire_2mm2_1p Length=0.008 units=km",
-        "New Load.EP_1F_Lighting2_BN phases=1 Bus1=EP_b.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_1f_lighting2_bn",
+        "New Load.EP_1F_Lighting2_BN phases=1 Bus1=EP_b.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_1f_lighting2_bn",
 
         # 1F 插座/WiFi 線路 3
         "New Line.EP_Br3 Bus1=EP_Panel.1.0 Bus2=EP_c.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",#盤體拉到牆壁插座6公尺
-        "New Load.EP_1F_WiFi_AN phases=1 Bus1=EP_c.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_1f_wifi_an",
+        "New Load.EP_1F_WiFi_AN phases=1 Bus1=EP_c.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_1f_wifi_an",
 
         # 1F 插座220v/電熱水器  線路 4
         "New Line.EP_Br4 Bus1=EP_Panel.1.2 Bus2=EP_d.1.2 LineCode=wire_5p5mm2_2p Length=0.006 units=km",
-        "New Load.EP_1F_WaterHeater_ABN phases=1 Bus1=EP_d.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_ep_1f_WaterHeater_abn",
+        "New Load.EP_1F_WaterHeater_ABN phases=1 Bus1=EP_d.1.2 kV=0.22 kW=1 pf=0.95 model=1 Daily=Shape_ep_1f_WaterHeater_abn",
 
         # 1F 廚房專插/冰箱 線路 5
         "New Line.EP_Br5 Bus1=EP_Panel.1.0 Bus2=EP_e.1.0 LineCode=wire_5p5mm2_1p Length=0.01 units=km",#通常在 1F 後方或靠近陽台，距離 1F 盤較遠大概10公尺
-        "New Load.EP_Fridge_AN phases=1 Bus1=EP_e.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_fridge_an",
+        "New Load.EP_Fridge_AN phases=1 Bus1=EP_e.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_fridge_an",
 
         # 1F 廚房專插  線路 6
         "New Line.EP_Br6 Bus1=EP_Panel.2.0 Bus2=EP_f.2.0 LineCode=wire_5p5mm2_1p Length=0.01 units=km",
-        "New Load.EP_Kitchen_BN phases=1 Bus1=EP_f.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_kitchen_bn",
+        "New Load.EP_Kitchen_BN phases=1 Bus1=EP_f.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_kitchen_bn",
 
         #  EPtoLW 線路 7，創造一條線叫 ToLW，指定從EP panel  拉線過來接，源頭接在 EP_Panel ，尾端幫 配電盤做一個 做一個接口 叫做 LW_panel
         "New Line.ToLW Bus1=EP_Panel.1.2 Bus2=LW_panel.1.2 LineCode=wire_8mm2_2p Length=0.009 units=km",#從一樓拉到三樓大概 9公尺
         #  LW 線路 1，創造一條線叫 Topump，指定從 LW_panel  拉線過來接，源頭接在 LW_panel ，尾端幫 配電盤做一個 做一個接口 叫做 LW_a
         "New Line.Topump Bus1=LW_panel.1.2 Bus2=LW_a.1.2 LineCode=wire_5p5mm2_2p Length=0.002 units=km",#通常很近 2公尺
-        "New Load.EP_BoosterPump_ABN phases=1 Bus1=LW_a.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_ep_boosterpump_abn",
+        "New Load.EP_BoosterPump_ABN phases=1 Bus1=LW_a.1.2 kV=0.22 kW=1 pf=0.95 model=1 Daily=Shape_ep_boosterpump_abn",
 
         # 2F 插座  線路 8
         "New Line.EP_Br8 Bus1=EP_Panel.1.0 Bus2=EP_h.1.0 LineCode=wire_5p5mm2_1p Length=0.015 units=km",#從一樓拉到 二樓大概10公尺以上
-        "New Load.EP_2F_socket1_AN phases=1 Bus1=EP_h.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_2f_socket1_an",
+        "New Load.EP_2F_socket1_AN phases=1 Bus1=EP_h.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_2f_socket1_an",
 
         # 2F 插座  線路 9
         "New Line.EP_Br9 Bus1=EP_Panel.2.0 Bus2=EP_i.2.0 LineCode=wire_5p5mm2_1p Length=0.015 units=km",
-        "New Load.EP_2F_socket2_BN phases=1 Bus1=EP_i.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_2f_socket2_bn",
+        "New Load.EP_2F_socket2_BN phases=1 Bus1=EP_i.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_2f_socket2_bn",
 
         # 2F 照明  線路 10
         "New Line.EP_Br10 Bus1=EP_Panel.1.0 Bus2=EP_j.1.0 LineCode=wire_2mm2_1p Length=0.02 units=km",#從一樓拉到二樓又需要覆蓋 二樓電燈 20公尺
-        "New Load.EP_2F_Lighting1_AN phases=1 Bus1=EP_j.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_2f_lighting1_an",
+        "New Load.EP_2F_Lighting1_AN phases=1 Bus1=EP_j.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_2f_lighting1_an",
 
         # 2F 照明  線路 11
         "New Line.EP_Br11 Bus1=EP_Panel.2.0 Bus2=EP_k.2.0 LineCode=wire_2mm2_1p Length=0.02 units=km",
-        "New Load.EP_2F_Lighting2_BN phases=1 Bus1=EP_k.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_2f_lighting2_bn",
+        "New Load.EP_2F_Lighting2_BN phases=1 Bus1=EP_k.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_2f_lighting2_bn",
 
         # 3F 照明  線路 12
         "New Line.EP_Br12 Bus1=EP_Panel.1.0 Bus2=EP_l.1.0 LineCode=wire_2mm2_1p Length=0.025 units=km",#從一樓拉到三樓又需要覆蓋 三樓電燈 25公尺
-        "New Load.EP_3F_Lighting1_AN phases=1 Bus1=EP_l.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_3f_lighting1_an",
+        "New Load.EP_3F_Lighting1_AN phases=1 Bus1=EP_l.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_3f_lighting1_an",
 
         # 3F 照明  線路 13
         "New Line.EP_Br13 Bus1=EP_Panel.2.0 Bus2=EP_m.2.0 LineCode=wire_2mm2_1p Length=0.025 units=km",
-        "New Load.EP_3F_Lighting2_BN phases=1 Bus1=EP_m.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_3f_lighting2_bn",
+        "New Load.EP_3F_Lighting2_BN phases=1 Bus1=EP_m.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_3f_lighting2_bn",
 
         # 3F 加壓馬達 線路14  220V 1/2hp (約 0.4kW)
         "New Line.EP_Br14 Bus1=EP_Panel.1.2 Bus2=EP_n.1.2 LineCode=wire_5p5mm2_2p Length=0.03 units=km",
-        "New Load.EP_Pump phases=1 Bus1=EP_n.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_ep_pump",
+        "New Load.EP_Pump phases=1 Bus1=EP_n.1.2 kV=0.22 kW=1 pf=0.95 model=1 Daily=Shape_ep_pump",
 
         # 3F 插座/洗衣機  線路15
         "New Line.EP_Br15 Bus1=EP_Panel.1.0 Bus2=EP_o.1.0 LineCode=wire_5p5mm2_1p Length=0.03 units=km",
-        "New Load.EP_Washer_AN phases=1 Bus1=EP_o.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_washer_an",
+        "New Load.EP_Washer_AN phases=1 Bus1=EP_o.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_washer_an",
 
         # 3F 插座/烘衣機  線路16
         "New Line.EP_Br16 Bus1=EP_Panel.2.0 Bus2=EP_p.2.0 LineCode=wire_5p5mm2_1p Length=0.03 units=km",
-        "New Load.EP_Dryer_BN phases=1 Bus1=EP_p.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_ep_dryer_bn",
+        "New Load.EP_Dryer_BN phases=1 Bus1=EP_p.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_ep_dryer_bn",
 
 
 # ==========================================
@@ -276,43 +276,43 @@ def build_circuit(pv_csv_filename="pv_curve_15min.csv"):
 
         # 創造負載叫 Lighting1_AN 從 L1_a  拉線過來接，接在 L1_a
         # dss.Text.Command("New Load.[負載名稱] phases=[相數] Bus1=[匯流排.節點] kV=[電壓] kW=[功率] pf=[功率因數] model=[模型類型]")
-        "New Load.L1_Lighting1_AN  phases=1  Bus1=L1_a.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_lighting1_an", # 消耗功率 =0.1kw * cvs檔的 mult值
+        "New Load.L1_Lighting1_AN  phases=1  Bus1=L1_a.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l1_lighting1_an", # 消耗功率 =0.1kw * cvs檔的 mult值
 
         # 照明 線路 2,L1_Br2, L1_b
         "New Line.L1_Br2 Bus1=panel1F.2.0 Bus2=L1_b.2.0 LineCode=wire_2mm2_1p Length=0.01 units=km",  # 110
-        "New Load.L1_Lighting2_BN  phases=1  Bus1=L1_b.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_lighting2_bn",
+        "New Load.L1_Lighting2_BN  phases=1  Bus1=L1_b.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l1_lighting2_bn",
 
         # 插座 線路 3,L1_Br3, L1_c
         "New Line.L1_Br3 Bus1=panel1F.1.0 Bus2=L1_c.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",  # 110,6公尺
-        "New Load.L1_socket1_AN  phases=1  Bus1=L1_c.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_socket1_an",
+        "New Load.L1_socket1_AN  phases=1  Bus1=L1_c.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l1_socket1_an",
 
         # 插座 線路 4,L1_Br4, L1_d
         "New Line.L1_Br4 Bus1=panel1F.2.0 Bus2=L1_d.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",  # 110
-        "New Load.L1_socket2_BN  phases=1  Bus1=L1_d.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_socket2_bn",
+        "New Load.L1_socket2_BN  phases=1  Bus1=L1_d.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l1_socket2_bn",
 
         # 插座 線路 5,L1_Br5, L1_e
         "New Line.L1_Br5 Bus1=panel1F.1.0 Bus2=L1_e.1.0 LineCode=wire_5p5mm2_1p Length=0.012 units=km",  # 110
-        "New Load.L1_socket3_AN  phases=1  Bus1=L1_e.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_socket3_an",
+        "New Load.L1_socket3_AN  phases=1  Bus1=L1_e.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l1_socket3_an",
 
         # 插座 線路 6,L1_Br6, L1_f
         "New Line.L1_Br6 Bus1=panel1F.2.0 Bus2=L1_f.2.0 LineCode=wire_5p5mm2_1p Length=0.012 units=km",  # 110
-        "New Load.L1_socket4_BN  phases=1  Bus1=L1_f.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_socket4_bn",
+        "New Load.L1_socket4_BN  phases=1  Bus1=L1_f.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l1_socket4_bn",
 
         # 插座 線路 7,L1_Br7, L1_g
         "New Line.L1_Br7 Bus1=panel1F.1.0 Bus2=L1_g.1.0 LineCode=wire_5p5mm2_1p Length=0.08 units=km",  # 110
-        "New Load.L1_socket5_AN  phases=1  Bus1=L1_g.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_socket5_an",
+        "New Load.L1_socket5_AN  phases=1  Bus1=L1_g.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l1_socket5_an",
 
         # 插座 線路 8,L1_Br8, L1_h
         "New Line.L1_Br8 Bus1=panel1F.2.0 Bus2=L1_h.2.0 LineCode=wire_5p5mm2_1p Length=0.08 units=km",  # 110
-        "New Load.L1_socket6_BN  phases=1  Bus1=L1_h.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l1_socket6_bn",
+        "New Load.L1_socket6_BN  phases=1  Bus1=L1_h.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l1_socket6_bn",
 
         # 插座 廚房線路/家用電磁爐 9,L1_Br9, L1_i
         "New Line.L1_Br9 Bus1=panel1F.1.2 Bus2=L1_i.1.2 LineCode=wire_5p5mm2_2p Length=0.012 units=km",  # 110       
-        "New Load.L1_InductionCooktop_ABN  phases=1  Bus1=L1_i.1.2   kV=0.22 kW=1 pf=1 model=1 Daily=Shape_l1_InductionCooktop_abn",
+        "New Load.L1_InductionCooktop_ABN  phases=1  Bus1=L1_i.1.2   kV=0.22 kW=1 pf=0.95 model=1 Daily=Shape_l1_InductionCooktop_abn",
 
         # 冷氣 線路 10,L1_Br10, L1_j
         "New Line.L1_Br10 Bus1=panel1F.1.2 Bus2=L1_j.1.2 LineCode=wire_5p5mm2_2p Length=0.012 units=km",  # 110
-        "New Load.L1_Airc_ABN  phases=1  Bus1=L1_j.1.2   kV=0.22 kW=1 pf=1 model=1 Daily=Shape_l1_airc_abn",
+        "New Load.L1_Airc_ABN  phases=1  Bus1=L1_j.1.2   kV=0.22 kW=1 pf=0.95 model=1 Daily=Shape_l1_airc_abn",
 
 
 
@@ -323,62 +323,62 @@ def build_circuit(pv_csv_filename="pv_curve_15min.csv"):
 
         # 照明 線路 1，創造一條線叫 L2_Br1，指定從 L2panel  拉線過來接，源頭接在 panel2F ，尾端幫 負載做一個 做一個接口 叫做 L2_a
         "New Line.L2_Br1 Bus1=panel2F.1.0 Bus2=L2_a.1.0 LineCode=wire_2mm2_1p Length=0.01 units=km", #110
-        "New Load.L2_Lighting1_AN  phases=1  Bus1=L2_a.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_lighting1_an",#假設消耗功率 100w
+        "New Load.L2_Lighting1_AN  phases=1  Bus1=L2_a.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_lighting1_an",#假設消耗功率 100w
 
 
         # 照明 線路 2,L2_Br2, L2_b
         "New Line.L2_Br2 Bus1=panel2F.2.0 Bus2=L2_b.2.0 LineCode=wire_2mm2_1p Length=0.01 units=km", #110
-        "New Load.L2_Lighting2_BN  phases=1  Bus1=L2_b.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_lighting2_bn",
+        "New Load.L2_Lighting2_BN  phases=1  Bus1=L2_b.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_lighting2_bn",
 
         # 插座 線路 3,L2_Br3, L2_c
         "New Line.L2_Br3 Bus1=panel2F.1.0 Bus2=L2_c.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km", #110
-        "New Load.L2_socket1_AN  phases=1  Bus1=L2_c.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_socket1_an",
+        "New Load.L2_socket1_AN  phases=1  Bus1=L2_c.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_socket1_an",
 
         # 插座 線路 4,L2_Br4, L2_d
         "New Line.L2_Br4 Bus1=panel2F.2.0 Bus2=L2_d.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km", #110
-        "New Load.L2_socket2_BN  phases=1  Bus1=L2_d.2.0   kV=0.11 kW=1 pf=1 model=1  Daily=Shape_l2_socket2_bn",
+        "New Load.L2_socket2_BN  phases=1  Bus1=L2_d.2.0   kV=0.11 kW=1 pf=0.95 model=1  Daily=Shape_l2_socket2_bn",
 
         # 插座 線路 5,L2_Br5, L2_e
         "New Line.L2_Br5 Bus1=panel2F.1.0 Bus2=L2_e.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km", #110
-        "New Load.L2_socket3_AN  phases=1  Bus1=L2_e.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_socket3_an",
+        "New Load.L2_socket3_AN  phases=1  Bus1=L2_e.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_socket3_an",
 
         # 插座 線路 6,L2_Br6, L2_f
         "New Line.L2_Br6 Bus1=panel2F.2.0 Bus2=L2_f.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km", #110
-        "New Load.L2_socket4_BN  phases=1  Bus1=L2_f.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_socket4_bn",
+        "New Load.L2_socket4_BN  phases=1  Bus1=L2_f.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_socket4_bn",
 
         # 插座 線路 7,L2_Br7, L2_g
         "New Line.L2_Br7 Bus1=panel2F.1.0 Bus2=L2_g.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km", #110
-        "New Load.L2_socket5_AN  phases=1  Bus1=L2_g.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_socket5_an",
+        "New Load.L2_socket5_AN  phases=1  Bus1=L2_g.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_socket5_an",
 
         # 插座 線路 8,L2_Br8, L2_h
         "New Line.L2_Br8 Bus1=panel2F.2.0 Bus2=L2_h.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km", #110
-        "New Load.L2_socket6_BN  phases=1  Bus1=L2_h.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_socket6_bn",
+        "New Load.L2_socket6_BN  phases=1  Bus1=L2_h.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_socket6_bn",
 
         # 插座 線路 9,L2_Br9, L2_i
         "New Line.L2_Br9 Bus1=panel2F.1.0 Bus2=L2_i.1.0 LineCode=wire_5p5mm2_2p Length=0.006 units=km", #110
-        "New Load.L2_socket7_AN  phases=1  Bus1=L2_i.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_socket7_an",
+        "New Load.L2_socket7_AN  phases=1  Bus1=L2_i.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_socket7_an",
 
         # 插座/除濕機 線路 10,L2_Br10, L2_j
         "New Line.L2_Br10 Bus1=panel2F.2.0 Bus2=L2_j.2.0 LineCode=wire_5p5mm2_2p Length=0.006 units=km", #110
-        "New Load.L2_Dehumidifier_BN  phases=1  Bus1=L2_j.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_Dehumidifier_bn",
+        "New Load.L2_Dehumidifier_BN  phases=1  Bus1=L2_j.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_Dehumidifier_bn",
 
         # 浴室插座 線路 11,L2_Br11, L2_k
         "New Line.L2_Br11 Bus1=panel2F.1.0 Bus2=L2_k.1.0 LineCode=wire_5p5mm2_1p Length=0.01 units=km",
-        "New Load.L2_bathroom1_AN  phases=1  Bus1=L2_k.1.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_bathroom1_an", # 假設消耗功率 110V 100w
+        "New Load.L2_bathroom1_AN  phases=1  Bus1=L2_k.1.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_bathroom1_an", # 假設消耗功率 110V 100w
 
         # 浴室插座 線路 12,L2_Br12, L2_l
         "New Line.L2_Br12 Bus1=panel2F.2.0 Bus2=L2_l.2.0 LineCode=wire_5p5mm2_1p Length=0.01 units=km",
-        "New Load.L2_bathroom2_BN  phases=1  Bus1=L2_l.2.0   kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l2_bathroom2_bn", # 假設消耗功率 110V 100w
+        "New Load.L2_bathroom2_BN  phases=1  Bus1=L2_l.2.0   kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l2_bathroom2_bn", # 假設消耗功率 110V 100w
 
 
         # 冷氣 線路 13，創造一條線叫 L2_Br13，指定從 L2panel  拉線過來接，源頭接在 panel2F ，尾端幫 負載做一個 做一個接口 叫做 L2_m
         "New Line.L2_Br13 Bus1=panel2F.1.2 Bus2=L2_m.1.2 LineCode=wire_5p5mm2_2p Length=0.015 units=km",
-        "New Load.L2_Airc1_ABN  phases=1  Bus1=L2_m.1.2   kV=0.22 kW=1 pf=1 model=1 Daily=Shape_l2_airc1_abn",# 假設消耗功率 220V 1500w
+        "New Load.L2_Airc1_ABN  phases=1  Bus1=L2_m.1.2   kV=0.22 kW=1 pf=0.95 model=1 Daily=Shape_l2_airc1_abn",# 假設消耗功率 220V 1500w
 
 
         # 冷氣 線路 14，創造一條線叫 L2_Br14，指定從 L2panel  拉線過來接，源頭接在 panel2F ，尾端幫 負載做一個 做一個接口 叫做 L2_n
         "New Line.L2_Br14 Bus1=panel2F.1.2 Bus2=L2_n.1.2 LineCode=wire_5p5mm2_2p Length=0.015 units=km",
-        "New Load.L2_Airc2_ABN  phases=1  Bus1=L2_n.1.2   kV=0.22 kW=1 pf=1 model=1 Daily=Shape_l2_airc2_abn",# 假設消耗功率 220V 1500w
+        "New Load.L2_Airc2_ABN  phases=1  Bus1=L2_n.1.2   kV=0.22 kW=1 pf=0.95 model=1 Daily=Shape_l2_airc2_abn",# 假設消耗功率 220V 1500w
 
 
 
@@ -390,48 +390,48 @@ def build_circuit(pv_csv_filename="pv_curve_15min.csv"):
 
         # 照明 線路 1 ，創造一條線叫 L3_Br1，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_a
         "New Line.L3_Br1 Bus1=panel3F.1.0 Bus2=L3_a.1.0 LineCode=wire_2mm2_1p Length=0.008 units=km",
-        "New Load.L3_Lighting1_AN phases=1 Bus1=L3_a.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_lighting1_an",
+        "New Load.L3_Lighting1_AN phases=1 Bus1=L3_a.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_lighting1_an",
 
         # 照明 線路 2 ，創造一條線叫 L3_Br2，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_b
         "New Line.L3_Br2 Bus1=panel3F.2.0 Bus2=L3_b.2.0 LineCode=wire_2mm2_1p Length=0.008 units=km",
-        "New Load.L3_Lighting2_BN phases=1 Bus1=L3_b.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_lighting2_bn",
+        "New Load.L3_Lighting2_BN phases=1 Bus1=L3_b.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_lighting2_bn",
 
 
         # 插座 線路 3 ，創造一條線叫 L3_Br3，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_c
         "New Line.L3_Br3 Bus1=panel3F.1.0 Bus2=L3_c.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.L3_socket1_AN phases=1 Bus1=L3_c.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_socket1_an",
+        "New Load.L3_socket1_AN phases=1 Bus1=L3_c.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_socket1_an",
 
         # 插座 線路 4 ，創造一條線叫 L3_Br4，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_d
         "New Line.L3_Br4 Bus1=panel3F.2.0 Bus2=L3_d.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.L3_socket2_BN phases=1 Bus1=L3_d.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_socket2_bn",
+        "New Load.L3_socket2_BN phases=1 Bus1=L3_d.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_socket2_bn",
 
         # 插座 線路 5 ，創造一條線叫 L3_Br4，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_e
         "New Line.L3_Br5 Bus1=panel3F.1.0 Bus2=L3_e.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.L3_socket3_AN phases=1 Bus1=L3_e.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_socket3_an",
+        "New Load.L3_socket3_AN phases=1 Bus1=L3_e.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_socket3_an",
 
         # 插座 線路 6 ，創造一條線叫 L3_Br5，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_f
         "New Line.L3_Br6 Bus1=panel3F.2.0 Bus2=L3_f.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.L3_socket4_BN phases=1 Bus1=L3_f.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_socket4_bn",
+        "New Load.L3_socket4_BN phases=1 Bus1=L3_f.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_socket4_bn",
 
         # 插座 線路 7 ，創造一條線叫 L3_Br6，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_g
         "New Line.L3_Br7 Bus1=panel3F.1.0 Bus2=L3_g.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.L3_socket5_AN phases=1 Bus1=L3_g.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_socket5_an",
+        "New Load.L3_socket5_AN phases=1 Bus1=L3_g.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_socket5_an",
 
         # 插座 線路 8 ，創造一條線叫 L3_Br7，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_h
         "New Line.L3_Br8 Bus1=panel3F.2.0 Bus2=L3_h.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.L3_socket6_BN phases=1 Bus1=L3_h.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_socket6_bn",
+        "New Load.L3_socket6_BN phases=1 Bus1=L3_h.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_socket6_bn",
 
         # 插座 線路 9 ，創造一條線叫 L3_Br8，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_i
         "New Line.L3_Br9 Bus1=panel3F.1.0 Bus2=L3_i.1.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.L3_socket7_AN phases=1 Bus1=L3_i.1.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_socket7_an",
+        "New Load.L3_socket7_AN phases=1 Bus1=L3_i.1.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_socket7_an",
 
         # 插座 線路 10 ，創造一條線叫 L3_Br9，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_j
         "New Line.L3_Br10 Bus1=panel3F.2.0 Bus2=L3_j.2.0 LineCode=wire_5p5mm2_1p Length=0.006 units=km",
-        "New Load.L3_socket8_BN phases=1 Bus1=L3_j.2.0 kV=0.11 kW=1 pf=1 model=1 Daily=Shape_l3_socket8_bn",
+        "New Load.L3_socket8_BN phases=1 Bus1=L3_j.2.0 kV=0.11 kW=1 pf=0.95 model=1 Daily=Shape_l3_socket8_bn",
 
         # 冷氣 線路 11 ，創造一條線叫 L3_Br10，指定從 L3panel  拉線過來接，源頭接在 panel3F ，尾端幫 負載做一個 做一個接口 叫做 L3_k
         "New Line.L3_Br11 Bus1=panel3F.1.2 Bus2=L3_k.1.2 LineCode=wire_5p5mm2_2p Length=0.015 units=km",
-        "New Load.L3_Airc_ABN phases=1 Bus1=L3_k.1.2 kV=0.22 kW=1 pf=1 model=1 Daily=Shape_l3_airc_abn",
+        "New Load.L3_Airc_ABN phases=1 Bus1=L3_k.1.2 kV=0.22 kW=1 pf=0.95 model=1 Daily=Shape_l3_airc_abn",
 
 
 

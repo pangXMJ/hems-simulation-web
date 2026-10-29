@@ -306,7 +306,9 @@ def hems_objective(
     final_soc = current_energy_kwh / BESS_CAPACITY_KWH  # 模擬結束時的 SOC
     penalty += (  # 累加終端 SOC 偏差懲罰 原本高於或低於目標都會被罰，改成高於 40% 不罰，低於 40% 才罰
         FINAL_SOC_PENALTY_WEIGHT
-        * max(TARGET_FINAL_SOC - final_soc,0.0) ** 2
+        * (
+            max(TARGET_FINAL_SOC - final_soc,0.0)
+            +max(TARGET_FINAL_SOC - final_soc,0.0)** 2)
     )
 
     return total_cost + penalty
@@ -420,8 +422,11 @@ def hems_objective_progressive(
 
     final_soc = current_energy_kwh / BESS_CAPACITY_KWH  # 模擬結束時的 SOC
     penalty += (  # 累加終端 SOC 偏差懲罰
-        FINAL_SOC_PENALTY_WEIGHT
-        * max(TARGET_FINAL_SOC - final_soc, 0.0) ** 2
+         FINAL_SOC_PENALTY_WEIGHT
+        * (
+            max(TARGET_FINAL_SOC - final_soc, 0.0)
+            + max(TARGET_FINAL_SOC - final_soc, 0.0) ** 2
+        )
     )
 
     return total_cost + penalty

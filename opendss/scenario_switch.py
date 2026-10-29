@@ -486,8 +486,8 @@ def compute_battery_asset_value(df_history: pd.DataFrame, pricing: str, season: 
     final_soc_percent = df_history[SOC_COLUMN].iloc[-1]
     final_soc_kwh = (final_soc_percent / 100.0) * config.BESS_CAPACITY_KWH
     initial_soc_kwh = config.INITIAL_SOC * config.BESS_CAPACITY_KWH
-    # 只計算「跟起點相比」的變化：正 = 比起點多存（加分），負 = 比起點少（隔天要買回來，扣分）
-    delta_kwh = final_soc_kwh - initial_soc_kwh
+    # 方案 B：只計算「比起點少」的部分（隔天一定要補回來，扣分）；多存的電不確定用不用得到，不加分
+    delta_kwh = min(final_soc_kwh - initial_soc_kwh, 0.0)
 
     if pricing == "progressive":
         import pso

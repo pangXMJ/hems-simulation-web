@@ -515,7 +515,10 @@ def run_simulation(mode='baseline', outage_start_step=-1, outage_end_step=-1,bat
                 rated_v = rated_kv * 1000.0
                 #動態電壓計算邏輯 (real_v)
                 if status_code == 1 and amps > 0:#當設備有運作且有電流時
-                    real_v = watts / amps #功率/電流 反推電壓
+                    total_powers = dss.CktElement.TotalPowers()          # [P(kW), Q(kvar)]
+                    kva = (total_powers[0]**2 + total_powers[1]**2) ** 0.5 if total_powers else 0.0
+                    real_v = kva * 1000.0 / amps#功率/電流 反推電壓
+                    
                 else:# 當設備關機或沒電流時：透過讀取節點電壓陣列（VoltagesMagAng()）來獲取
                     voltages = dss.CktElement.VoltagesMagAng()
                     if rated_v >= 200 and len(voltages) >= 3:
