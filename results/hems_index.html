@@ -276,7 +276,7 @@ footer{border-top:1px solid var(--line); padding:44px 5vw; color:var(--faint); f
  <!-- ===== Section 02: 電池充放電對比 ===== -->
   <div class="section">
     <div class="section-head reveal">
-      <div><div class="idx-num">02 — OPTIMIZATION</div><h2>POS 儲能<br>排程最佳化</h2></div>
+      <div><div class="idx-num">02 — OPTIMIZATION</div><h2>PSO 儲能<br>排程最佳化</h2></div>
       <p class="tc">於用電低谷引導放電、太陽能充裕時段安排充電，降低尖峰購電功率並平滑全日負載。</p>
     </div>
 
@@ -359,7 +359,11 @@ async function initHome(){
       const currentRes = await fetch('/api/current_scenario');
       const currentScenario = await currentRes.json();
       pricing = currentScenario.pricing || 'two_stage';
-      const pricingText = pricing === 'two_stage' ? '兩段式電價' : '三段式電價';
+      const pricingNames = { two_stage: '兩段式電價', three_stage: '三段式電價', progressive: '累進電價' };/*網站顯示電價種類的地方，如果這裡沒有更新，那網站上就不可能出現*/
+      let pricingText = pricingNames[pricing] || pricing;
+      if (pricing === 'progressive' && currentScenario.monthly_cumulative_kwh != null) {
+        pricingText += `（累計 ${currentScenario.monthly_cumulative_kwh} 度）`;
+      }
       const outageText = currentScenario.outage ? `停電模擬` : '無停電模擬';
       document.getElementById('modeStatusText').textContent = `${pricingText} · ${outageText}`;
       costSummary = currentScenario;  //  baseline_cost/pso_cost/savings 都在這裡面
@@ -595,12 +599,31 @@ renderFloorChart(currentFloor);
     });
 
     // 3. 獨立畫出 PSO 適應度收斂曲線
-    const fitFakeData = Array.from({length: 50}, (_, i) => Math.max(2, 260 * Math.exp(-i/8)));
-    charts.fitnessChart = new Chart(document.getElementById('fitnessChart'), {
-      type: 'line',
-      data: { labels: Array.from({length: 50}, (_, i) => i * 10), datasets: [{ data: fitFakeData, borderColor: '#f3f2ee', tension: 0.3, pointRadius: 0, borderWidth: 2 }] },
-      options: chartBase
-    });
+    const conv = data.pso_convergence || {};
+    if (conv.iteration && conv.iteration.length > 0) {
+      charts.fitnessChart = new Chart(document.getElementById('fitnessChart'), {
+        type: 'line',
+        data: {
+          labels: conv.iteration,
+          datasets: [{
+            label: '全域最佳適應值 (gbest)',
+            data: conv.gbest_fitness,
+            borderColor: '#c8ff4d', tension: 0, pointRadius: 0, borderWidth: 2
+          }]
+        },
+        options: Object.assign({}, chartBase, {
+          plugins: { legend: { display: true, labels: { color: '#8a8a90' } } },
+          scales: {
+            x: { title: { display: true, text: '迭代次數', color: '#8a8a90' }, ticks: { color: '#5a5a60', maxTicksLimit: 12 }, grid: { display: false } },
+            y: { title: { display: true, text: '適應值（元）', color: '#8a8a90' }, ticks: { color: '#5a5a60' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          }
+        })
+      });
+    } else {
+      document.getElementById('fitnessChart').parentElement.innerHTML =
+        '<p class="tc" style="color:var(--dim);">尚未執行 PSO，請先到設備控制頁按下確認。</p>';
+    }
+    //
 
     const idealBattery = data.ideal_schedule ? data.ideal_schedule.battery_power_kw : [];
     const psoActualBattery = data.pso_actual ? data.pso_actual.battery_power_kw : [];

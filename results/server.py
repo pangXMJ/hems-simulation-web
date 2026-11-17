@@ -1,7 +1,6 @@
 import sys
 import os
 import uvicorn
-
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import opendssdirect as dss
@@ -217,6 +216,21 @@ def get_daily_summary(pricing: str = "two_stage"):
     grid_kwh_diff = [grid_kwh[0]] + list(grid_kwh[1:] - grid_kwh[:-1])
     grid_power_kw = [round(v / 0.25, 4) for v in grid_kwh_diff]
 
+    #讀取收斂紀錄的程式
+    season = CURRENT_SCENARIO.get("season", "summer")
+    day_type = CURRENT_SCENARIO.get("day_type", "weekday")
+    iter_path = os.path.join(
+        PSO_OUTPUT_DIR, f"pso_iteration_history_{pricing}_{season}_{day_type}_15min.csv"
+    )
+    pso_convergence = {}
+    if os.path.exists(iter_path):
+        df_iter = pd.read_csv(iter_path)
+        pso_convergence = {
+            "iteration": df_iter["iteration"].tolist(),
+            "gbest_fitness": df_iter["gbest_fitness"].tolist(),
+        }
+    #
+
     return {
         "time_labels": df_pso_history["Time"].tolist(),
         "floor_devices": floor_devices,
@@ -229,6 +243,7 @@ def get_daily_summary(pricing: str = "two_stage"):
         ].to_dict(orient="list"),
         "pso_actual": df_pso_bess[["Time", "battery_power_kw", "soc"]].to_dict(orient="list"),
         "baseline_actual": df_baseline_bess[["Time", "battery_power_kw", "soc"]].to_dict(orient="list"),
+        "pso_convergence": pso_convergence,#收集收斂曲線的數值
     }
 
 @app.get("/api/current_scenario")

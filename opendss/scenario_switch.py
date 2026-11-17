@@ -679,6 +679,13 @@ def switch_scenario(config_json: dict, server_module):#兩個參數config_json�
 
     # --- 階段四：重置即時引擎（只有 PSO 版本會被搬上網站即時展示）---
     reset_online_engine(server_module, pricing, weather, outage, outage_start_step, outage_end_step)
+    #呼叫天氣季節的設定值
+    server_module.CURRENT_SCENARIO.update({
+        "season": season,
+        "day_type": day_type,
+        "weather": weather,
+        "monthly_cumulative_kwh": monthly_cumulative_kwh,
+    })
 
     server_module.CURRENT_COST_SUMMARY = {
         "pso_cost": pso_adjusted_cost,
