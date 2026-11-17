@@ -9,8 +9,25 @@ import pandas as pd
 
 """
 重要參數
-config的OUTAGE_SOC_MIN = 0.1#停電的電池下限跟 battery_control_logic的ISLAND_SOC_FLOOR = 10.0 要一起改才有用
+平時（無停電）SOC 上下限 20%–90%：三個地方都要改
+檔案	參數	影響
+config.py	SOC_MIN = 0.20、SOC_MAX = 0.90	PSO 規劃排程
+battery_control_logic.py	AUTO_SOC_MIN = 20.0、AUTO_SOC_MAX = 90.0	Baseline 規則式控制
+battery_control_logic.py mode 3	if soc <= 20.0:（寫死的數字）	PSO 實際執行時的放電保護
 
+停電 SOC 下限 10%：兩個地方
+config.py 的 OUTAGE_SOC_MIN = 0.1
+battery_control_logic.py 孤島模式的 ISLAND_SOC_FLOOR = 10.0
+
+起始 SOC＝日終目標改成 50% 或 60%：三個地方
+config.py	INITIAL_SOC = 0.40 → 0.50
+config.py	TARGET_FINAL_SOC = 0.40 → 0.50
+hems_circuit.py	New Storage.Battery_Sys ... %stored=40 → 50
+
+
+
+
+config的OUTAGE_SOC_MIN = 0.1#停電的電池下限跟 battery_control_logic的ISLAND_SOC_FLOOR = 10.0 要一起改才有用
 opendss的起始電量 hems_circuit.py 的battery設定
 pso電池起點 config.py的 INITIAL_SOC 
 pso電池終點 config.py的 TARGET_FINAL_SOC
@@ -23,7 +40,6 @@ penalty += (  # 累加終端 SOC 偏差懲罰 原本高於或低於目標都會�
     )
 main.py的警告位置
 終端 SOC 控制未達目標在 simulate_best_schedule()
-
 config.py新增速度上限參數
 EARLY_STOP_REL_TOLERANCE（在「6. PSO 參數」區塊的最後一行）
 
@@ -36,7 +52,6 @@ python server.py
       → 觸發內部 "startup" 生命週期事件（框架內部，你看不到）
         → FastAPI 自動呼叫所有掛在 @app.on_event("startup") 上的函式
           → startup_event() 被執行            ← 這裡才真的跑到你的程式碼
-
 
 從07頁面開始
 在07頁面設定每個設備 電價 停電的屬性 在你按下按鈕之前 早就已經被瀏覽器記錄在對應的 HTML 元素本身裡了
@@ -72,13 +87,6 @@ python server.py
     這是同步處理：前端打這支 API 會等到整個「寫CSV → PSO → 離線驗證(PSO版+baseline對比)
     → 重置即時引擎」流程跑完才收到回應，期間前端應顯示等待畫面。
 """
-
-
-
-
-
-
-
 
 
 
